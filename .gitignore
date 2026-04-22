@@ -1,9 +1,62 @@
-.DS_Store
-/.build
-/Packages
+# OS specific
+**/.DS_Store
+Thumbs.db
+
+# Swift / Xcode
+.build/
+Packages/
 xcuserdata/
 DerivedData/
-.swiftpm/configuration/registries.json
-.swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
-.netrc
+.swiftpm/
 Package.resolved
+*.d
+*.dia
+*.o
+*.swiftdeps
+
+# Gradle / Android
+.gradle/
+build/
+local.properties
+*.apk
+*.aab
+*.ap_
+*.dex
+captures/
+.externalNativeBuild/
+!gradle/wrapper/gradle-wrapper.jar
+gradlew
+gradlew.bat
+
+# IntelliJ / Android Studio
+.idea/
+*.iml
+out/
+
+# Kotlin
+*.class
+*.kotlin_module
+.kotlin/
+**/kotlin-js-store/
+
+# Documentation (Dokka/Vitepress/Nuxt)
+docs/dist/
+docs/.vitepress/cache/
+docs/content/api/
+docs/.output/
+docs/.nuxt/
+docs/node_modules/
+
+docs/.data
+
+# AI & Editor Tools
+.agentbridge/
+.ai/
+.continue/
+.vscode/
+
+# Misc
+.netrc
+.tmp
+**/package-lock.json
+.zed
