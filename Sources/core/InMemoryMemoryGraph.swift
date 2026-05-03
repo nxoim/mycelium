@@ -465,6 +465,21 @@ public final class InMemoryMemoryGraph: MemoryGraph, @unchecked Sendable {
                         missingIDs.append(relatedId)
                     }
                 }
+
+                let validTargets = relatedIds.filter { $0 != id && store[$0] != nil }
+                for i in validTargets.indices {
+                    for j in validTargets.indices {
+                        if i != j {
+                            let from = validTargets[i]
+                            let to = validTargets[j]
+                            let inserted = associations[from, default: []].insert(to).inserted
+                            if inserted {
+                                affectedIDs.insert(from)
+                            }
+                        }
+                    }
+                }
+
                 if !missingIDs.isEmpty || !selfIDs.isEmpty {
                     // still mark as done so we return the error below
                 } else {

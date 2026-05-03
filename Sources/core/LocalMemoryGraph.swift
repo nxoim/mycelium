@@ -362,6 +362,7 @@ public final class LocalMemoryGraph: MemoryGraph, Sendable {
                 continuation.yield(.failure(.storageFailed(error.localizedDescription)))
             }
         }
+
     }
 
     public func allMemories(in range: Range<Int>, sortOrder: SortOrder) -> AsyncStream<
@@ -477,6 +478,20 @@ public final class LocalMemoryGraph: MemoryGraph, Sendable {
                     try childAssoc.insert(database, onConflict: .ignore)
                 }
 
+                let validTargets = relatedIds.filter { relatedId in
+                    relatedId != id && (try? NodeRecord.fetchOne(database, key: relatedId)) != nil
+                }
+                for i in 0..<validTargets.count {
+                    for j in (i + 1)..<validTargets.count {
+                        let a = validTargets[i]
+                        let b = validTargets[j]
+                        let ab = AssociationRecord(parentId: a, childId: b)
+                        try ab.insert(database, onConflict: .ignore)
+                        let ba = AssociationRecord(parentId: b, childId: a)
+                        try ba.insert(database, onConflict: .ignore)
+                    }
+                }
+
                 if !missingIDs.isEmpty {
                     let idsList = missingIDs.map { $0.uuidString }.joined(separator: ", ")
                     throw MemoryError.associationFailed(
@@ -490,7 +505,8 @@ public final class LocalMemoryGraph: MemoryGraph, Sendable {
                     )
                 }
             }
-            recordHistory(type: .associate, affectedIds: [id] + relatedIds)
+            let validRelatedIds = relatedIds.filter { $0 != id }
+            recordHistory(type: .associate, affectedIds: [id] + validRelatedIds)
             return .success(())
         } catch {
             if let memError = error as? MemoryError {
