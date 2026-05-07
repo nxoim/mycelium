@@ -209,24 +209,20 @@ struct SearchCommand: AsyncParsableCommand {
         guard let sortOrder = QueryParser.parseSortOrderStrict(sort) else {
             throw ValidationError("invalid --sort '\(sort)'")
         }
-        let depth = QueryParser.parseDepth(depthString)
         let config = MyceliumConfig(dbPath: db.isEmpty ? nil : db, ramOnly: ramOnly)
         let graph = try makeGraph(config: config)
         switch await graph.search(
-            keywords: keywords, in: range, depth: 0, sortOrder: .chronological
+            keywords: keywords, in: range, depth: 0, sortOrder: sortOrder
         )
         .firstResult()
         {
-        case .success(let nodes):
-            let ids = nodes.map { $0.id }
-            switch await graph.buildSummaryNode(ids: ids, depth: depth, sortOrder: sortOrder)
-                .firstResult()
-            {
-            case .success(let summaryNodes):
-                print(MemoryMarkdown.formatSummaryNodesWithCount(summaryNodes))
-            case .failure(let error):
-                print("Error: \(error.localizedDescription)")
-            }
+        case .success(let searchResult):
+            let memories = searchResult.items
+            let labelMap = memories.reduce(into: [:]) { $0[$1.id] = $1.label }
+            print(
+                MemoryMarkdown.formatSearchResults(
+                    memories, totalFound: searchResult.totalCount,
+                    offset: range.lowerBound, labelMap: labelMap))
         case .failure(let error):
             print("Error: \(error.localizedDescription)")
         }
@@ -270,20 +266,16 @@ struct AllMemoriesCommand: AsyncParsableCommand {
         guard let sortOrder = QueryParser.parseSortOrderStrict(sort) else {
             throw ValidationError("invalid --sort '\(sort)'")
         }
-        let depth = QueryParser.parseDepth(depthString)
         let config = MyceliumConfig(dbPath: db.isEmpty ? nil : db, ramOnly: ramOnly)
         let graph = try makeGraph(config: config)
         switch await graph.allMemories(in: range, depth: 0, sortOrder: sortOrder).firstResult() {
-        case .success(let nodes):
-            let ids = nodes.map { $0.id }
-            switch await graph.buildSummaryNode(ids: ids, depth: depth, sortOrder: sortOrder)
-                .firstResult()
-            {
-            case .success(let summaryNodes):
-                print(MemoryMarkdown.formatSummaryNodesWithCount(summaryNodes))
-            case .failure(let error):
-                print("Error: \(error.localizedDescription)")
-            }
+        case .success(let searchResult):
+            let memories = searchResult.items
+            let labelMap = memories.reduce(into: [:]) { $0[$1.id] = $1.label }
+            print(
+                MemoryMarkdown.formatSearchResults(
+                    memories, totalFound: searchResult.totalCount,
+                    offset: range.lowerBound, labelMap: labelMap))
         case .failure(let error):
             print("Error: \(error.localizedDescription)")
         }
@@ -327,20 +319,16 @@ struct AdriftCommand: AsyncParsableCommand {
         guard let sortOrder = QueryParser.parseSortOrderStrict(sort) else {
             throw ValidationError("invalid --sort '\(sort)'")
         }
-        let depth = QueryParser.parseDepth(depthString)
         let config = MyceliumConfig(dbPath: db.isEmpty ? nil : db, ramOnly: ramOnly)
         let graph = try makeGraph(config: config)
         switch await graph.adrift(in: range, depth: 0, sortOrder: sortOrder).firstResult() {
-        case .success(let nodes):
-            let ids = nodes.map { $0.id }
-            switch await graph.buildSummaryNode(ids: ids, depth: depth, sortOrder: sortOrder)
-                .firstResult()
-            {
-            case .success(let summaryNodes):
-                print(MemoryMarkdown.formatSummaryNodesWithCount(summaryNodes))
-            case .failure(let error):
-                print("Error: \(error.localizedDescription)")
-            }
+        case .success(let searchResult):
+            let memories = searchResult.items
+            let labelMap = memories.reduce(into: [:]) { $0[$1.id] = $1.label }
+            print(
+                MemoryMarkdown.formatSearchResults(
+                    memories, totalFound: searchResult.totalCount,
+                    offset: range.lowerBound, labelMap: labelMap))
         case .failure(let error):
             print("Error: \(error.localizedDescription)")
         }

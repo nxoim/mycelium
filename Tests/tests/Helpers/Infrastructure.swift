@@ -25,7 +25,8 @@ enum CLIArg {
 }
 
 enum OutputPattern {
-    static let found = "## Found"
+    static let found = "#### "
+    static let memoriesOfFound = "memories of"
     static let associatedWithNothing = "Associated with nothing"
     static let null = "null"
     static let ok = "OK"

@@ -36,8 +36,9 @@ struct CrossSurfaceTests {
         try await server.start()
         defer { server.stop() }
 
-        let wsUUID = await createMemory(label: "MCPCrossTest", content: "MCP created content",
-                                         wsURL: server.wsURL)
+        let wsUUID = await createMemory(
+            label: "MCPCrossTest", content: "MCP created content",
+            wsURL: server.wsURL)
 
         if let wsUUID = wsUUID {
             let httpResult = HTTPClient.get(
@@ -55,8 +56,9 @@ struct CrossSurfaceTests {
         try await server.start()
         defer { server.stop() }
 
-        let wsUUID = await createMemory(label: "WSCrossTest", content: "Via WebSocket",
-                                        wsURL: server.wsURL)
+        let wsUUID = await createMemory(
+            label: "WSCrossTest", content: "Via WebSocket",
+            wsURL: server.wsURL)
 
         if let wsUUID = wsUUID {
             let httpResult = HTTPClient.get(
@@ -79,6 +81,61 @@ struct CrossSurfaceTests {
                     "Node JSON should contain a 'depth' field. Keys: \(node.keys)")
             }
         }
+    }
+
+    @Test("Cross-surface lifecycle: CLI create → MCP search → HTTP verify")
+    func test_cross_surface_lifecycle() async throws {
+        let db = TempDirectory()
+        let server = TestServer(port: PortAllocator.allocate())
+        try await server.start()
+        defer { server.stop() }
+
+        let createResult = ProcessHelper.run([
+            "memorize", CLIArg.label, "LifecycleTarget",
+            CLIArg.content, "This content is about Swift programming language",
+            CLIArg.db, db.path,
+        ])
+        #expect(createResult.exitCode == 0)
+
+        let _ = ProcessHelper.run([
+            "memorize", CLIArg.label, "UnrelatedTopic",
+            CLIArg.content, "This is about something completely different",
+            CLIArg.db, db.path,
+        ])
+
+        let searchResult = MCPClient.call(
+            toolName: "search",
+            arguments: ["keywords": ["Swift", "programming"]],
+            extraArgs: [CLIArg.db, db.path]
+        )
+        #expect(!searchResult.isError)
+        #expect(searchResult.text.contains("LifecycleTarget"))
+
+        let emptySearch = MCPClient.call(
+            toolName: "search",
+            arguments: ["keywords": ["nonexistent_xyz_98765"]],
+            extraArgs: [CLIArg.db, db.path]
+        )
+        #expect(!emptySearch.isError)
+        #expect(emptySearch.text.contains("memories of") || emptySearch.text.isEmpty)
+
+        for i in 0..<3 {
+            let _ = ProcessHelper.run([
+                "memorize", CLIArg.label, "AllMemTest\(i)",
+                CLIArg.content, "Content number \(i)",
+                CLIArg.db, db.path,
+            ])
+        }
+
+        let allResult = MCPClient.call(
+            toolName: "allMemories",
+            arguments: ["range": "0:10"]
+        )
+        #expect(!allResult.isError)
+
+        let httpResult = HTTPClient.get(
+            url: URL(string: "\(server.baseURL)\(HTTPPath.memories)")!)
+        #expect(httpResult.statusCode == 200)
     }
 }
 

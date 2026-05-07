@@ -47,6 +47,28 @@ public enum MemoryMarkdown {
         return output
     }
 
+    /// Format a list of memories with count header — the single source of truth for all
+    /// search/list results (both CLI and MCP).
+    public static func formatSearchResults(
+        _ memories: [Memory],
+        totalFound: Int,
+        offset: Int = 0,
+        labelMap: [UUID: String] = [:]
+    ) -> String {
+        var output =
+            "#### \(memories.count) memories of \(totalFound) found, starting from \(offset)\n"
+
+        if !memories.isEmpty {
+            output +=
+                "\n"
+                + memories.map(
+                    { formatSummaryWithId($0, labelMap: labelMap) }
+                ).joined(separator: "\n---\n")
+        }
+
+        return output
+    }
+
     public static func formatContent(_ content: String?) -> String {
         content ?? "no content"
     }

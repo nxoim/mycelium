@@ -66,7 +66,7 @@ public final class InMemoryMemoryGraph: MemoryGraph, @unchecked Sendable {
     private typealias ContentEntry = AsyncStream<Result<[String?], MemoryError>>.Continuation
     private typealias ListEntry = (
         range: Range<Int>, depth: Int, sortOrder: SortOrder,
-        continuation: AsyncStream<Result<[Memory], MemoryError>>.Continuation
+        continuation: AsyncStream<Result<SearchResult<Memory>, MemoryError>>.Continuation
     )
     private typealias AssocEntry = (
         range: Range<Int>, depth: Int,
@@ -74,7 +74,7 @@ public final class InMemoryMemoryGraph: MemoryGraph, @unchecked Sendable {
     )
     private typealias SearchEntry = (
         keywords: [String], range: Range<Int>, depth: Int, sortOrder: SortOrder,
-        continuation: AsyncStream<Result<[Memory], MemoryError>>.Continuation
+        continuation: AsyncStream<Result<SearchResult<Memory>, MemoryError>>.Continuation
     )
 
     private var nodeStreams: [UUID: [UUID: NodeEntry]] = [:]
@@ -198,8 +198,13 @@ public final class InMemoryMemoryGraph: MemoryGraph, @unchecked Sendable {
         if hasAllSubscribers {
             let all = Array(store.values)
             allNodesStreams.values.forEach { entry in
-                let paged = paginate(sorted(all, by: entry.sortOrder), range: entry.range)
-                entry.continuation.yield(.success(paged.map { buildNode($0, depth: 0, path: []) }))
+                let sorted = sorted(all, by: entry.sortOrder)
+                let paged = paginate(sorted, range: entry.range)
+                entry.continuation.yield(
+                    .success(
+                        SearchResult(
+                            items: paged.map { buildNode($0, depth: 0, path: []) },
+                            totalCount: sorted.count)))
             }
         }
 
@@ -212,18 +217,26 @@ public final class InMemoryMemoryGraph: MemoryGraph, @unchecked Sendable {
                             || storedNode.content.lowercased().contains(keyword.lowercased())
                     }
                 }
-                let paged = paginate(
-                    sorted(matched, by: entry.sortOrder, keywords: entry.keywords),
-                    range: entry.range)
-                entry.continuation.yield(.success(paged.map { buildNode($0, depth: 0, path: []) }))
+                let sorted = sorted(matched, by: entry.sortOrder, keywords: entry.keywords)
+                let paged = paginate(sorted, range: entry.range)
+                entry.continuation.yield(
+                    .success(
+                        SearchResult(
+                            items: paged.map { buildNode($0, depth: 0, path: []) },
+                            totalCount: sorted.count)))
             }
         }
 
         if hasOrphanSubscribers {
             let orphans = currentOrphans()
             orphanStreams.values.forEach { entry in
-                let paged = paginate(sorted(orphans, by: entry.sortOrder), range: entry.range)
-                entry.continuation.yield(.success(paged.map { buildNode($0, depth: 0, path: []) }))
+                let sorted = sorted(orphans, by: entry.sortOrder)
+                let paged = paginate(sorted, range: entry.range)
+                entry.continuation.yield(
+                    .success(
+                        SearchResult(
+                            items: paged.map { buildNode($0, depth: 0, path: []) },
+                            totalCount: sorted.count)))
             }
         }
     }
@@ -269,9 +282,13 @@ public final class InMemoryMemoryGraph: MemoryGraph, @unchecked Sendable {
                 notifyAll(affectedIDs: affectedIDs)
             } else {
                 allNodesStreams.values.forEach { entry in
-                    let paged = paginate(sortedStore(by: entry.sortOrder), range: entry.range)
+                    let sorted = sortedStore(by: entry.sortOrder)
+                    let paged = paginate(sorted, range: entry.range)
                     entry.continuation.yield(
-                        .success(paged.map { buildNode($0, depth: 0, path: []) }))
+                        .success(
+                            SearchResult(
+                                items: paged.map { buildNode($0, depth: 0, path: []) },
+                                totalCount: sorted.count)))
                 }
                 searchStreams.values.forEach { entry in
                     let matched = store.values.filter { storedNode in
@@ -280,17 +297,23 @@ public final class InMemoryMemoryGraph: MemoryGraph, @unchecked Sendable {
                                 || storedNode.content.lowercased().contains(keyword.lowercased())
                         }
                     }
-                    let paged = paginate(
-                        sorted(matched, by: entry.sortOrder, keywords: entry.keywords),
-                        range: entry.range)
+                    let sorted = sorted(matched, by: entry.sortOrder, keywords: entry.keywords)
+                    let paged = paginate(sorted, range: entry.range)
                     entry.continuation.yield(
-                        .success(paged.map { buildNode($0, depth: 0, path: []) }))
+                        .success(
+                            SearchResult(
+                                items: paged.map { buildNode($0, depth: 0, path: []) },
+                                totalCount: sorted.count)))
                 }
                 orphanStreams.values.forEach { entry in
-                    let paged = paginate(
-                        sorted(currentOrphans(), by: entry.sortOrder), range: entry.range)
+                    let orphans = currentOrphans()
+                    let sorted = sorted(orphans, by: entry.sortOrder)
+                    let paged = paginate(sorted, range: entry.range)
                     entry.continuation.yield(
-                        .success(paged.map { buildNode($0, depth: 0, path: []) }))
+                        .success(
+                            SearchResult(
+                                items: paged.map { buildNode($0, depth: 0, path: []) },
+                                totalCount: sorted.count)))
                 }
             }
         }
@@ -493,7 +516,7 @@ public final class InMemoryMemoryGraph: MemoryGraph, @unchecked Sendable {
     }
 
     public func search(keywords: [String], in range: Range<Int>, depth: Int, sortOrder: SortOrder)
-        -> AsyncStream<Result<[Memory], MemoryError>>
+        -> AsyncStream<Result<SearchResult<Memory>, MemoryError>>
     {
         let streamID = UUID()
         return AsyncStream { continuation in
@@ -504,9 +527,13 @@ public final class InMemoryMemoryGraph: MemoryGraph, @unchecked Sendable {
                             || storedNode.content.lowercased().contains(keyword.lowercased())
                     }
                 }
-                let paged = paginate(
-                    sorted(matched, by: sortOrder, keywords: keywords), range: range)
-                continuation.yield(.success(paged.map { buildNode($0, depth: depth, path: []) }))
+                let sorted = sorted(matched, by: sortOrder, keywords: keywords)
+                let paged = paginate(sorted, range: range)
+                continuation.yield(
+                    .success(
+                        SearchResult(
+                            items: paged.map { buildNode($0, depth: depth, path: []) },
+                            totalCount: sorted.count)))
                 searchStreams[streamID] = (
                     keywords: keywords, range: range, depth: depth, sortOrder: sortOrder,
                     continuation: continuation
@@ -521,13 +548,18 @@ public final class InMemoryMemoryGraph: MemoryGraph, @unchecked Sendable {
     }
 
     public func allMemories(in range: Range<Int>, depth: Int, sortOrder: SortOrder) -> AsyncStream<
-        Result<[Memory], MemoryError>
+        Result<SearchResult<Memory>, MemoryError>
     > {
         let streamID = UUID()
         return AsyncStream { continuation in
             queue.sync {
-                let paged = paginate(sorted(Array(store.values), by: sortOrder), range: range)
-                continuation.yield(.success(paged.map { buildNode($0, depth: depth, path: []) }))
+                let sorted = sorted(Array(store.values), by: sortOrder)
+                let paged = paginate(sorted, range: range)
+                continuation.yield(
+                    .success(
+                        SearchResult(
+                            items: paged.map { buildNode($0, depth: depth, path: []) },
+                            totalCount: sorted.count)))
                 allNodesStreams[streamID] = (
                     range: range, depth: depth, sortOrder: sortOrder, continuation: continuation
                 )
@@ -570,14 +602,19 @@ public final class InMemoryMemoryGraph: MemoryGraph, @unchecked Sendable {
     }
 
     public func adrift(in range: Range<Int>, depth: Int, sortOrder: SortOrder) -> AsyncStream<
-        Result<[Memory], MemoryError>
+        Result<SearchResult<Memory>, MemoryError>
     > {
         let streamID = UUID()
         return AsyncStream { continuation in
             queue.sync {
                 let orphans = currentOrphans()
-                let paged = paginate(sorted(orphans, by: sortOrder), range: range)
-                continuation.yield(.success(paged.map { buildNode($0, depth: depth, path: []) }))
+                let sorted = sorted(orphans, by: sortOrder)
+                let paged = paginate(sorted, range: range)
+                continuation.yield(
+                    .success(
+                        SearchResult(
+                            items: paged.map { buildNode($0, depth: depth, path: []) },
+                            totalCount: sorted.count)))
                 orphanStreams[streamID] = (
                     range: range, depth: depth, sortOrder: sortOrder, continuation: continuation
                 )

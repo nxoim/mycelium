@@ -28,13 +28,13 @@ struct WebSocketHandler {
         let result = await graph.allMemories(in: 0..<10000, depth: 0, sortOrder: .chronological)
             .firstResult()
         if case .success(let memories) = result {
-            nodes = memories.map { memory in
+            nodes = memories.items.map { memory in
                 GraphNode(
                     id: memory.id, label: memory.label, content: memory.content,
                     createdAt: Date.now, associationCount: memory.associations.count)
             }
-            let nodeIds = Set(memories.map { $0.id })
-            for memory in memories {
+            let nodeIds = Set(memories.items.map { $0.id })
+            for memory in memories.items {
                 for assocId in memory.associations {
                     if nodeIds.contains(assocId) {
                         assocList.append((from: memory.id, to: assocId))
@@ -290,8 +290,8 @@ struct WebSocketHandler {
         switch await graph.search(keywords: keywords, in: range, depth: depth, sortOrder: sort)
             .firstResult()
         {
-        case .success(let nodes):
-            await wsManager.send(connectionId, .commandResult(.nodes(nodes)))
+        case .success(let searchResult):
+            await wsManager.send(connectionId, .commandResult(.nodes(searchResult.items)))
         case .failure(let error):
             await wsManager.send(
                 connectionId, .commandError(message: error.localizedDescription))
@@ -308,8 +308,8 @@ struct WebSocketHandler {
             (params["sortOrder"] as? String).flatMap { QueryParser.parseSortOrderStrict($0) }
             ?? .chronological
         switch await graph.allMemories(in: range, depth: depth, sortOrder: sort).firstResult() {
-        case .success(let nodes):
-            await wsManager.send(connectionId, .commandResult(.nodes(nodes)))
+        case .success(let searchResult):
+            await wsManager.send(connectionId, .commandResult(.nodes(searchResult.items)))
         case .failure(let error):
             await wsManager.send(
                 connectionId, .commandError(message: error.localizedDescription))
@@ -326,8 +326,8 @@ struct WebSocketHandler {
             (params["sort"] as? String).flatMap { QueryParser.parseSortOrderStrict($0) }
             ?? .chronological
         switch await graph.adrift(in: range, depth: depth, sortOrder: sort).firstResult() {
-        case .success(let nodes):
-            await wsManager.send(connectionId, .commandResult(.nodes(nodes)))
+        case .success(let searchResult):
+            await wsManager.send(connectionId, .commandResult(.nodes(searchResult.items)))
         case .failure(let error):
             await wsManager.send(
                 connectionId, .commandError(message: error.localizedDescription))

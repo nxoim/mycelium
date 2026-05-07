@@ -33,6 +33,17 @@ public struct MemorySummary: Sendable, Codable {
     }
 }
 
+/// Paginated search result with totalCount metadata.
+public struct SearchResult<T: Sendable & Encodable>: Sendable, Encodable {
+    public let items: [T]
+    public let totalCount: Int
+
+    public init(items: [T], totalCount: Int) {
+        self.items = items
+        self.totalCount = totalCount
+    }
+}
+
 /// Nested memory summary for recall with depth — associations are recursive MemorySummaryNodes.
 ///
 /// The `depth` field tracks the node's position in the association tree (root = 0, children = 1, etc.).
@@ -151,24 +162,27 @@ public protocol MemoryGraph: Sendable {
         Result<[MemorySummaryNode?], MemoryError>
     >
 
-    /// Search memories by keywords, paginated and sorted with optional association depth
+    /// Search memories by keywords, paginated and sorted with optional association depth.
+    /// Returns a SearchResult wrapper with totalCount metadata for the result header.
     func search(keywords: [String], in range: Range<Int>, depth: Int, sortOrder: SortOrder)
         -> AsyncStream<
-            Result<[Memory], MemoryError>
+            Result<SearchResult<Memory>, MemoryError>
         >
 
-    /// Retrieve all memories, paginated and sorted with optional association depth
+    /// Retrieve all memories, paginated and sorted with optional association depth.
+    /// Returns a SearchResult wrapper with totalCount metadata for the result header.
     func allMemories(in range: Range<Int>, depth: Int, sortOrder: SortOrder) -> AsyncStream<
-        Result<[Memory], MemoryError>
+        Result<SearchResult<Memory>, MemoryError>
     >
 
     /// Find memories associated with a given memory, traversing up to the specified depth
     func related(to id: UUID, in range: Range<Int>, depth: Int, sortOrder: SortOrder)
         -> AsyncStream<Result<[Memory], MemoryError>>
 
-    /// Find memories with no incoming associations (orphans/adrift) with optional association depth
+    /// Find memories with no incoming associations (orphans/adrift) with optional association depth.
+    /// Returns a SearchResult wrapper with totalCount metadata for the result header.
     func adrift(in range: Range<Int>, depth: Int, sortOrder: SortOrder) -> AsyncStream<
-        Result<[Memory], MemoryError>
+        Result<SearchResult<Memory>, MemoryError>
     >
 
     /// Create mutual associations between a memory and others

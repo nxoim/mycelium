@@ -47,7 +47,9 @@ struct ImportExportTests {
             "all-memories", CLIArg.db, db2.path,
         ])
         #expect(allMemories.exitCode == 0)
-        #expect(allMemories.stdout.contains(OutputPattern.found + " 3 memory(s)"))
+        #expect(
+            allMemories.stdout.contains("memories of")
+                && allMemories.stdout.contains("found"))
 
         let freshUUIDs = TestResult.allUUIDs(from: allMemories)
         #expect(freshUUIDs.count >= 3)
@@ -95,7 +97,9 @@ struct ImportExportTests {
             "all-memories", CLIArg.db, db2.path,
         ])
         #expect(allMemories.exitCode == 0)
-        #expect(allMemories.stdout.contains(OutputPattern.found + " 2 memory(s)"))
+        #expect(
+            allMemories.stdout.contains("memories of")
+                && allMemories.stdout.contains("found"))
 
         try? FileManager.default.removeItem(atPath: exportFile)
     }

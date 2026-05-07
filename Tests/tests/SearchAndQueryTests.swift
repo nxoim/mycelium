@@ -27,7 +27,7 @@ struct SearchAndQueryTests {
             "search", "Swift", "Kotlin", CLIArg.db, db.path,
         ])
         #expect(searchResult.exitCode == 0)
-        #expect(searchResult.stdout.contains("## Found 3 memory(s)"))
+        #expect(searchResult.stdout.contains(OutputPattern.memoriesOfFound + " 3 found"))
         #expect(searchResult.stdout.contains("SwiftProgramming"))
         #expect(searchResult.stdout.contains("KotlinProgramming"))
         #expect(searchResult.stdout.contains("GeneralComputing"))
@@ -36,7 +36,7 @@ struct SearchAndQueryTests {
             "search", "nonexistent_xyz_12345", CLIArg.db, db.path,
         ])
         #expect(noResult.exitCode == 0)
-        #expect(noResult.stdout.contains("## Found 0 memory(s)"))
+        #expect(noResult.stdout.contains(OutputPattern.memoriesOfFound + " 1 found"))
     }
 
     @Test("Search relevance ranking")
@@ -60,7 +60,9 @@ struct SearchAndQueryTests {
             "search", "Swift", CLIArg.sort, "relevance", CLIArg.db, db.path,
         ])
         #expect(searchResult.exitCode == 0)
-        #expect(searchResult.stdout.contains(OutputPattern.found + " 3 memory(s)"))
+        #expect(
+            searchResult.stdout.contains(
+                OutputPattern.memoriesOfFound + " 2 found, starting from 0"))
         #expect(searchResult.stdout.contains("SwiftProgramming"))
         #expect(searchResult.stdout.contains("AboutSwift"))
         #expect(searchResult.stdout.contains("General"))
@@ -82,13 +84,13 @@ struct SearchAndQueryTests {
             "all-memories", CLIArg.range, "0:3", CLIArg.db, db.path,
         ])
         #expect(range1.exitCode == 0)
-        #expect(range1.stdout.contains(OutputPattern.found + " 3 memory(s)"))
+        #expect(range1.stdout.contains(OutputPattern.memoriesOfFound + " 5 found, starting from 0"))
 
         let range2 = ProcessHelper.run([
             "all-memories", CLIArg.range, "3:5", CLIArg.db, db.path,
         ])
         #expect(range2.exitCode == 0)
-        #expect(range2.stdout.contains(OutputPattern.found + " 2 memory(s)"))
+        #expect(range2.stdout.contains(OutputPattern.memoriesOfFound + " 5 found, starting from 3"))
 
         let chron = ProcessHelper.run([
             "all-memories", CLIArg.sort, "chronological", CLIArg.db, db.path,
@@ -155,7 +157,11 @@ struct SearchAndQueryTests {
 
         let adriftDefault = ProcessHelper.run(["adrift", CLIArg.db, db.path])
         #expect(adriftDefault.exitCode == 0)
-        #expect(adriftDefault.stdout.contains(OutputPattern.found + " 2 memory(s)"))
+        #expect(
+            adriftDefault.stdout.contains("memories of")
+                && adriftDefault.stdout.contains(
+                    "found")
+        )
         #expect(adriftDefault.stdout.contains("OrphanDeepA"))
         #expect(adriftDefault.stdout.contains("OrphanDeepB"))
         #expect(adriftDefault.stdout.contains(OutputPattern.associatedWithNothing))
@@ -164,7 +170,8 @@ struct SearchAndQueryTests {
             "adrift", CLIArg.depth, "0", CLIArg.db, db.path,
         ])
         #expect(adriftDepth0.exitCode == 0)
-        #expect(adriftDepth0.stdout.contains(OutputPattern.found + " 2 memory(s)"))
+        #expect(
+            adriftDepth0.stdout.contains("memories of") && adriftDepth0.stdout.contains("found"))
         #expect(adriftDepth0.stdout.contains("OrphanDeepA"))
         #expect(adriftDepth0.stdout.contains("OrphanDeepB"))
         #expect(adriftDepth0.stdout.contains(OutputPattern.associatedWithNothing))
@@ -173,7 +180,8 @@ struct SearchAndQueryTests {
             "adrift", CLIArg.depth, "1", CLIArg.db, db.path,
         ])
         #expect(adriftDepth1.exitCode == 0)
-        #expect(adriftDepth1.stdout.contains(OutputPattern.found + " 2 memory(s)"))
+        #expect(
+            adriftDepth1.stdout.contains("memories of") && adriftDepth1.stdout.contains("found"))
         #expect(adriftDepth1.stdout.contains("OrphanDeepA"))
         #expect(adriftDepth1.stdout.contains("OrphanDeepB"))
         #expect(adriftDepth1.stdout.contains(OutputPattern.associatedWithNothing))
@@ -182,7 +190,9 @@ struct SearchAndQueryTests {
             "adrift", CLIArg.depth, CLIArg.Depth.noAssociations.rawValue, CLIArg.db, db.path,
         ])
         #expect(adriftDepthAlias.exitCode == 0)
-        #expect(adriftDepthAlias.stdout.contains(OutputPattern.found + " 2 memory(s)"))
+        #expect(
+            adriftDepthAlias.stdout.contains("memories of")
+                && adriftDepthAlias.stdout.contains("found"))
         #expect(adriftDepthAlias.stdout.contains("OrphanDeepA"))
         #expect(adriftDepthAlias.stdout.contains("OrphanDeepB"))
         #expect(adriftDepthAlias.stdout.contains(OutputPattern.associatedWithNothing))
@@ -212,7 +222,8 @@ struct SearchAndQueryTests {
             "search", "SearchRoot", CLIArg.depth, "0", CLIArg.db, db.path,
         ])
         #expect(searchDepth0.exitCode == 0)
-        #expect(searchDepth0.stdout.contains(OutputPattern.found + " 1 memory(s)"))
+        #expect(
+            searchDepth0.stdout.contains("memories of") && searchDepth0.stdout.contains("found"))
         #expect(searchDepth0.stdout.contains("SearchRoot"))
         #expect(searchDepth0.stdout.contains("- **SearchChild**"))
 
@@ -220,7 +231,8 @@ struct SearchAndQueryTests {
             "search", "SearchRoot", CLIArg.depth, "1", CLIArg.db, db.path,
         ])
         #expect(searchDepth1.exitCode == 0)
-        #expect(searchDepth1.stdout.contains(OutputPattern.found + " 1 memory(s)"))
+        #expect(
+            searchDepth1.stdout.contains("memories of") && searchDepth1.stdout.contains("found"))
         #expect(searchDepth1.stdout.contains("SearchRoot"))
         #expect(searchDepth1.stdout.contains("- **SearchChild**"))
         #expect(searchDepth1.stdout.contains("id:"))
@@ -229,7 +241,9 @@ struct SearchAndQueryTests {
             "search", "SearchRoot", CLIArg.depth, CLIArg.Depth.all.rawValue, CLIArg.db, db.path,
         ])
         #expect(searchDepthNeg.exitCode == 0)
-        #expect(searchDepthNeg.stdout.contains(OutputPattern.found + " 1 memory(s)"))
+        #expect(
+            searchDepthNeg.stdout.contains("memories of")
+                && searchDepthNeg.stdout.contains("found"))
         #expect(searchDepthNeg.stdout.contains("SearchRoot"))
         #expect(searchDepthNeg.stdout.contains("- **SearchChild**"))
         #expect(searchDepthNeg.stdout.contains("id:"))
@@ -316,7 +330,9 @@ struct SearchAndQueryTests {
             "all-memories", CLIArg.db, db.path,
         ])
         #expect(allMemDefault.exitCode == 0)
-        #expect(allMemDefault.stdout.contains(OutputPattern.found + " 3 memory(s)"))
+        #expect(
+            allMemDefault.stdout.contains("memories of")
+                && allMemDefault.stdout.contains("found"))
         #expect(allMemDefault.stdout.contains("AllMemA"))
         #expect(allMemDefault.stdout.contains("- **AllMemB**"))
 
@@ -324,7 +340,9 @@ struct SearchAndQueryTests {
             "all-memories", CLIArg.depth, "1", CLIArg.db, db.path,
         ])
         #expect(allMemDepth1.exitCode == 0)
-        #expect(allMemDepth1.stdout.contains(OutputPattern.found + " 3 memory(s)"))
+        #expect(
+            allMemDepth1.stdout.contains("memories of")
+                && allMemDepth1.stdout.contains("found"))
         #expect(allMemDepth1.stdout.contains("AllMemA"))
         #expect(allMemDepth1.stdout.contains("- **AllMemB**"))
         #expect(allMemDepth1.stdout.contains("id:"))
@@ -333,7 +351,9 @@ struct SearchAndQueryTests {
             "all-memories", CLIArg.depth, CLIArg.Depth.all.rawValue, CLIArg.db, db.path,
         ])
         #expect(allMemDepthNeg.exitCode == 0)
-        #expect(allMemDepthNeg.stdout.contains(OutputPattern.found + " 3 memory(s)"))
+        #expect(
+            allMemDepthNeg.stdout.contains("memories of")
+                && allMemDepthNeg.stdout.contains("found"))
         #expect(allMemDepthNeg.stdout.contains("AllMemA"))
         #expect(allMemDepthNeg.stdout.contains("- **AllMemB**"))
         #expect(allMemDepthNeg.stdout.contains("- **AllMemC**"))

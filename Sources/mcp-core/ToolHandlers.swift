@@ -151,7 +151,8 @@ private func handleSearch(_ graph: MemoryGraphBox, _ parameters: CallTool.Parame
 
     return formatSearchResult(
         await graph.search(keywords: keywords, in: range, depth: depth, sortOrder: sort)
-            .firstResult()
+            .firstResult(),
+        offset: range.lowerBound
     )
 }
 
@@ -165,7 +166,8 @@ private func handleAllMemories(_ graph: MemoryGraphBox, _ parameters: CallTool.P
         ?? .chronological
 
     return formatSearchResult(
-        await graph.allMemories(in: range, depth: depth, sortOrder: sort).firstResult()
+        await graph.allMemories(in: range, depth: depth, sortOrder: sort).firstResult(),
+        offset: range.lowerBound
     )
 }
 
@@ -179,7 +181,8 @@ private func handleOrphans(_ graph: MemoryGraphBox, _ parameters: CallTool.Param
         ?? .chronological
 
     return formatSearchResult(
-        await graph.adrift(in: range, depth: depth, sortOrder: sort).firstResult()
+        await graph.adrift(in: range, depth: depth, sortOrder: sort).firstResult(),
+        offset: range.lowerBound
     )
 }
 
@@ -226,11 +229,19 @@ private func handleForget(_ graph: MemoryGraphBox, _ parameters: CallTool.Parame
     return executeWithFailureCheck(graph.forget(idsToForget))
 }
 
-private func formatSearchResult(_ result: Result<[Memory], MemoryError>) -> CallTool.Result {
+private func formatSearchResult(
+    _ result: Result<SearchResult<Memory>, MemoryError>,
+    offset: Int
+) -> CallTool.Result {
     switch result {
-    case .success(let memories):
+    case .success(let searchResult):
+        let memories = searchResult.items
+        let totalFound = searchResult.totalCount
         let labelMap = memories.reduce(into: [:]) { $0[$1.id] = $1.label }
-        return .text(MemoryMarkdown.formatSummariesWithCount(memories, labelMap: labelMap))
+        return .text(
+            MemoryMarkdown.formatSearchResults(
+                memories, totalFound: totalFound,
+                offset: offset, labelMap: labelMap))
     case .failure(let error):
         return .error("Error: \(error.localizedDescription)")
     }
@@ -245,20 +256,18 @@ private func executeWithFailureCheck(_ result: Result<Void, MemoryError>) -> Cal
     }
 }
 
-private func extractIDs(named key: String, from arguments: [String: Any]?) -> [UUID]? {
-    guard let dict = arguments else { return nil }
-    guard let array = dict[key] as? [Any] else { return nil }
-    return array.compactMap { $0 as? String }.compactMap { UUID(uuidString: $0) }
+private func extractIDs(named key: String, from arguments: [String: Value]?) -> [UUID]? {
+    guard let arrayValue = arguments?[key]?.arrayValue else { return nil }
+    return arrayValue.compactMap(\.stringValue).compactMap { UUID(uuidString: $0) }
 }
 
-private func extractKeywords(from arguments: [String: Any]?) -> [String]? {
-    guard let dict = arguments else { return nil }
-    guard let array = dict["keywords"] as? [Any] else { return nil }
-    return array.compactMap { $0 as? String }
+private func extractKeywords(from arguments: [String: Value]?) -> [String]? {
+    guard let arrayValue = arguments?["keywords"]?.arrayValue else { return nil }
+    return arrayValue.compactMap(\.stringValue)
 }
 
-private func extractID(named name: String, from arguments: [String: Any]?) -> UUID? {
-    guard let dict = arguments else { return nil }
-    guard let identifierString = dict[name] as? String else { return nil }
+private func extractID(named name: String, from arguments: [String: Value]?) -> UUID? {
+    guard let value = arguments?[name] else { return nil }
+    guard let identifierString = value.stringValue else { return nil }
     return UUID(uuidString: identifierString)
 }

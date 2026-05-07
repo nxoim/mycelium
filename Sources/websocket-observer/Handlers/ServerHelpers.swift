@@ -55,8 +55,8 @@ struct ServerHelpers {
         let sort = parseAPISort(request.uri.query)
 
         switch await graph.allMemories(in: range, depth: depth, sortOrder: sort).firstResult() {
-        case .success(let memories):
-            let summaries: [[String: Any]] = memories.map { memory in
+        case .success(let searchResult):
+            let summaries: [[String: Any]] = searchResult.items.map { memory in
                 [
                     "id": memory.id.uuidString,
                     "label": memory.label,
@@ -154,8 +154,8 @@ struct ServerHelpers {
         switch await graph.search(keywords: keywords, in: range, depth: depth, sortOrder: sort)
             .firstResult()
         {
-        case .success(let memories):
-            let summaries: [[String: Any]] = memories.map { memory in
+        case .success(let searchResult):
+            let summaries: [[String: Any]] = searchResult.items.map { memory in
                 [
                     "id": memory.id.uuidString,
                     "label": memory.label,
@@ -183,8 +183,8 @@ struct ServerHelpers {
         let sort = parseAPISort(request.uri.query)
 
         switch await graph.adrift(in: range, depth: depth, sortOrder: sort).firstResult() {
-        case .success(let memories):
-            let summaries: [[String: Any]] = memories.map { memory in
+        case .success(let searchResult):
+            let summaries: [[String: Any]] = searchResult.items.map { memory in
                 [
                     "id": memory.id.uuidString,
                     "label": memory.label,
@@ -210,8 +210,8 @@ struct ServerHelpers {
 
         switch await graph.allMemories(in: range, depth: 0, sortOrder: .chronological).firstResult()
         {
-        case .success(let memories):
-            nodes = memories.map { memory in
+        case .success(let searchResult):
+            nodes = searchResult.items.map { memory in
                 [
                     "id": memory.id.uuidString,
                     "label": memory.label,
@@ -221,8 +221,8 @@ struct ServerHelpers {
                 ]
             }
 
-            let nodeIds = Set(memories.map { $0.id })
-            for memory in memories {
+            let nodeIds = Set(searchResult.items.map { $0.id })
+            for memory in searchResult.items {
                 for assocId in memory.associations {
                     if nodeIds.contains(assocId) {
                         associations.append([

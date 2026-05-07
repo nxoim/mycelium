@@ -453,7 +453,7 @@ public final class LocalMemoryGraph: MemoryGraph, Sendable {
     }
 
     public func search(keywords: [String], in range: Range<Int>, depth: Int, sortOrder: SortOrder)
-        -> AsyncStream<Result<[Memory], MemoryError>>
+        -> AsyncStream<Result<SearchResult<Memory>, MemoryError>>
     {
         return AsyncStream { continuation in
             do {
@@ -466,18 +466,19 @@ public final class LocalMemoryGraph: MemoryGraph, Sendable {
                             || n.content.lowercased().contains(kw.lowercased())
                     }
                 }
-                let paged = self.paginate(
-                    self.sorted(matched, by: sortOrder, keywords: keywords), range: range)
+                let sorted = self.sorted(matched, by: sortOrder, keywords: keywords)
+                let paged = self.paginate(sorted, range: range)
                 if paged.isEmpty {
-                    continuation.yield(.success([]))
+                    continuation.yield(.success(SearchResult(items: [], totalCount: sorted.count)))
                 } else {
-                    let memories = try databaseQueue.read { database -> [Memory] in
+                    let items = try databaseQueue.read { database -> [Memory] in
                         try paged.compactMap {
                             try self.buildNode(
                                 database: database, id: $0.id, depth: depth, path: [])
                         }.compactMap { $0 }
                     }
-                    continuation.yield(.success(memories))
+                    continuation.yield(
+                        .success(SearchResult(items: items, totalCount: sorted.count)))
                 }
             } catch {
                 continuation.yield(.failure(.storageFailed(error.localizedDescription)))
@@ -487,24 +488,26 @@ public final class LocalMemoryGraph: MemoryGraph, Sendable {
     }
 
     public func allMemories(in range: Range<Int>, depth: Int, sortOrder: SortOrder) -> AsyncStream<
-        Result<[Memory], MemoryError>
+        Result<SearchResult<Memory>, MemoryError>
     > {
         return AsyncStream { continuation in
             do {
                 let allNodes = try databaseQueue.read { database -> [NodeRecord] in
                     try NodeRecord.fetchAll(database)
                 }
-                let paged = self.paginate(self.sorted(allNodes, by: sortOrder), range: range)
+                let sorted = self.sorted(allNodes, by: sortOrder)
+                let paged = self.paginate(sorted, range: range)
                 if paged.isEmpty {
-                    continuation.yield(.success([]))
+                    continuation.yield(.success(SearchResult(items: [], totalCount: sorted.count)))
                 } else {
-                    let memories = try databaseQueue.read { database -> [Memory] in
+                    let items = try databaseQueue.read { database -> [Memory] in
                         try paged.compactMap {
                             try self.buildNode(
                                 database: database, id: $0.id, depth: depth, path: [])
                         }.compactMap { $0 }
                     }
-                    continuation.yield(.success(memories))
+                    continuation.yield(
+                        .success(SearchResult(items: items, totalCount: sorted.count)))
                 }
             } catch {
                 continuation.yield(.failure(.storageFailed(error.localizedDescription)))
@@ -551,7 +554,7 @@ public final class LocalMemoryGraph: MemoryGraph, Sendable {
     }
 
     public func adrift(in range: Range<Int>, depth: Int, sortOrder: SortOrder) -> AsyncStream<
-        Result<[Memory], MemoryError>
+        Result<SearchResult<Memory>, MemoryError>
     > {
         return AsyncStream { continuation in
             do {
@@ -560,17 +563,19 @@ public final class LocalMemoryGraph: MemoryGraph, Sendable {
                         sql: "id NOT IN (SELECT childId FROM associations)")
                     return try request.fetchAll(database)
                 }
-                let paged = self.paginate(orphans, range: range)
+                let sorted = self.sorted(orphans, by: sortOrder)
+                let paged = self.paginate(sorted, range: range)
                 if paged.isEmpty {
-                    continuation.yield(.success([]))
+                    continuation.yield(.success(SearchResult(items: [], totalCount: sorted.count)))
                 } else {
-                    let memories = try databaseQueue.read { database -> [Memory] in
+                    let items = try databaseQueue.read { database -> [Memory] in
                         try paged.compactMap {
                             try self.buildNode(
                                 database: database, id: $0.id, depth: depth, path: [])
                         }.compactMap { $0 }
                     }
-                    continuation.yield(.success(memories))
+                    continuation.yield(
+                        .success(SearchResult(items: items, totalCount: sorted.count)))
                 }
             } catch {
                 continuation.yield(.failure(.storageFailed(error.localizedDescription)))

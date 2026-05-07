@@ -20,10 +20,13 @@ public final class MemoryGraphBox: @unchecked Sendable {
     private let _recall: ([UUID], Int, SortOrder) -> AsyncStream<Result<[Memory?], MemoryError>>
     private let _recallFully: ([UUID], SortOrder) -> AsyncStream<Result<[String?], MemoryError>>
     private let _search:
-        ([String], Range<Int>, Int, SortOrder) -> AsyncStream<Result<[Memory], MemoryError>>
+        ([String], Range<Int>, Int, SortOrder) -> AsyncStream<
+            Result<SearchResult<Memory>, MemoryError>
+        >
     private let _allMemories:
-        (Range<Int>, Int, SortOrder) -> AsyncStream<Result<[Memory], MemoryError>>
-    private let _adrift: (Range<Int>, Int, SortOrder) -> AsyncStream<Result<[Memory], MemoryError>>
+        (Range<Int>, Int, SortOrder) -> AsyncStream<Result<SearchResult<Memory>, MemoryError>>
+    private let _adrift:
+        (Range<Int>, Int, SortOrder) -> AsyncStream<Result<SearchResult<Memory>, MemoryError>>
     private let _associate: (UUID, [UUID]) -> Result<Void, MemoryError>
     private let _dissociate: (UUID, [UUID]) -> Result<Void, MemoryError>
     private let _forget: ([UUID]) -> Result<Void, MemoryError>
@@ -94,19 +97,19 @@ public final class MemoryGraphBox: @unchecked Sendable {
     }
 
     public func search(keywords: [String], in range: Range<Int>, depth: Int, sortOrder: SortOrder)
-        -> AsyncStream<Result<[Memory], MemoryError>>
+        -> AsyncStream<Result<SearchResult<Memory>, MemoryError>>
     {
         _search(keywords, range, depth, sortOrder)
     }
 
     public func allMemories(in range: Range<Int>, depth: Int, sortOrder: SortOrder) -> AsyncStream<
-        Result<[Memory], MemoryError>
+        Result<SearchResult<Memory>, MemoryError>
     > {
         _allMemories(range, depth, sortOrder)
     }
 
     public func adrift(in range: Range<Int>, depth: Int, sortOrder: SortOrder) -> AsyncStream<
-        Result<[Memory], MemoryError>
+        Result<SearchResult<Memory>, MemoryError>
     > {
         _adrift(range, depth, sortOrder)
     }
