@@ -14,14 +14,19 @@ struct MemoryHandlers {
     {
         let rangeStr = QueryParser.parseQueryParam(request.uri.query, "range")
         let range = QueryParser.parseRange(rangeStr) ?? (0..<20)
+        let depthStr = QueryParser.parseQueryParam(request.uri.query, "depth")
+        let depth = depthStr.flatMap { Int($0) } ?? 0
         let sortStr = QueryParser.parseQueryParam(request.uri.query, "sort")
         let sort = QueryParser.parseSortOrderStrict(sortStr) ?? .chronological
-        return await handleAllMemoriesAsync(range: range, sort: sort)
+        return await handleAllMemoriesAsync(range: range, depth: depth, sort: sort)
     }
 
-    private func handleAllMemoriesAsync(range: Range<Int>, sort: core.SortOrder) async -> Response {
+    private func handleAllMemoriesAsync(range: Range<Int>, depth: Int, sort: core.SortOrder) async
+        -> Response
+    {
         do {
-            let result = await graph.allMemories(in: range, sortOrder: sort).firstElement()
+            let result = await graph.allMemories(in: range, depth: depth, sortOrder: sort)
+                .firstResult()
             switch result {
             case .success(let nodes):
                 let data = try JSONEncoder().encode(nodes)
@@ -32,9 +37,6 @@ struct MemoryHandlers {
                     body: .init(
                         byteBuffer: ByteBuffer(
                             string: "{\"error\":\"\(error.localizedDescription)\"}")))
-            case .none:
-                let empty = Data("[ ]".utf8)
-                return Response(status: .ok, body: .init(byteBuffer: ByteBuffer(data: empty)))
             }
         } catch {
             return Response(
@@ -49,17 +51,23 @@ struct MemoryHandlers {
         let keywords = QueryParser.parseQueryArray(request.uri.query, "keywords")
         let rangeStr = QueryParser.parseQueryParam(request.uri.query, "range")
         let range = QueryParser.parseRange(rangeStr) ?? (0..<20)
+        let depthStr = QueryParser.parseQueryParam(request.uri.query, "depth")
+        let depth = depthStr.flatMap { Int($0) } ?? 0
         let sortStr = QueryParser.parseQueryParam(request.uri.query, "sort")
         let sort = QueryParser.parseSortOrderStrict(sortStr) ?? .chronological
-        return await handleSearchAsync(keywords: keywords, range: range, sort: sort)
+        return await handleSearchAsync(keywords: keywords, range: range, depth: depth, sort: sort)
     }
 
-    private func handleSearchAsync(keywords: [String], range: Range<Int>, sort: core.SortOrder)
+    private func handleSearchAsync(
+        keywords: [String], range: Range<Int>, depth: Int, sort: core.SortOrder
+    )
         async -> Response
     {
         do {
-            let result = await graph.search(keywords: keywords, in: range, sortOrder: sort)
-                .firstElement()
+            let result = await graph.search(
+                keywords: keywords, in: range, depth: depth, sortOrder: sort
+            )
+            .firstResult()
             switch result {
             case .success(let nodes):
                 let data = try JSONEncoder().encode(nodes)
@@ -70,9 +78,6 @@ struct MemoryHandlers {
                     body: .init(
                         byteBuffer: ByteBuffer(
                             string: "{\"error\":\"\(error.localizedDescription)\"}")))
-            case .none:
-                let empty = Data("[ ]".utf8)
-                return Response(status: .ok, body: .init(byteBuffer: ByteBuffer(data: empty)))
             }
         } catch {
             return Response(
@@ -86,14 +91,18 @@ struct MemoryHandlers {
     func handleAdrift(request: Request, context: some RequestContext) async throws -> Response {
         let rangeStr = QueryParser.parseQueryParam(request.uri.query, "range")
         let range = QueryParser.parseRange(rangeStr) ?? (0..<20)
+        let depthStr = QueryParser.parseQueryParam(request.uri.query, "depth")
+        let depth = depthStr.flatMap { Int($0) } ?? 0
         let sortStr = QueryParser.parseQueryParam(request.uri.query, "sort")
         let sort = QueryParser.parseSortOrderStrict(sortStr) ?? .chronological
-        return await handleAdriftAsync(range: range, sort: sort)
+        return await handleAdriftAsync(range: range, depth: depth, sort: sort)
     }
 
-    private func handleAdriftAsync(range: Range<Int>, sort: core.SortOrder) async -> Response {
+    private func handleAdriftAsync(range: Range<Int>, depth: Int, sort: core.SortOrder) async
+        -> Response
+    {
         do {
-            let result = await graph.adrift(in: range, sortOrder: sort).firstElement()
+            let result = await graph.adrift(in: range, depth: depth, sortOrder: sort).firstResult()
             switch result {
             case .success(let nodes):
                 let data = try JSONEncoder().encode(nodes)
@@ -104,9 +113,6 @@ struct MemoryHandlers {
                     body: .init(
                         byteBuffer: ByteBuffer(
                             string: "{\"error\":\"\(error.localizedDescription)\"}")))
-            case .none:
-                let empty = Data("[ ]".utf8)
-                return Response(status: .ok, body: .init(byteBuffer: ByteBuffer(data: empty)))
             }
         } catch {
             return Response(
@@ -135,7 +141,7 @@ struct MemoryHandlers {
     private func handleRecallAsync(id: UUID, depth: Int) async -> Response {
         do {
             let result = await graph.recall(ids: [id], depth: depth, sortOrder: .chronological)
-                .firstElement()
+                .firstResult()
             switch result {
             case .success(let nodes):
                 guard let node = nodes.first, let memory = node else {
@@ -152,10 +158,6 @@ struct MemoryHandlers {
                     body: .init(
                         byteBuffer: ByteBuffer(
                             string: "{\"error\":\"\(error.localizedDescription)\"}")))
-            case .none:
-                return Response(
-                    status: .notFound,
-                    body: .init(byteBuffer: ByteBuffer(string: "{\"error\":\"Memory not found\"}")))
             }
         } catch {
             return Response(
@@ -183,7 +185,7 @@ struct MemoryHandlers {
     private func handleRecallContentAsync(id: UUID) async -> Response {
         do {
             let result = await graph.recallFully(ids: [id], sortOrder: .chronological)
-                .firstElement()
+                .firstResult()
             switch result {
             case .success(let contents):
                 guard let content = contents.first else {
@@ -200,10 +202,6 @@ struct MemoryHandlers {
                     body: .init(
                         byteBuffer: ByteBuffer(
                             string: "{\"error\":\"\(error.localizedDescription)\"}")))
-            case .none:
-                return Response(
-                    status: .notFound,
-                    body: .init(byteBuffer: ByteBuffer(string: "{\"error\":\"Memory not found\"}")))
             }
         } catch {
             return Response(

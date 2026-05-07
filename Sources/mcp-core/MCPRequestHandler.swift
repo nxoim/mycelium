@@ -22,11 +22,9 @@ public func handleMCPRequest(
         }
 
         if method == "notifications/initialized" {
-            var headers = HTTPFields()
-            if let name = HTTPField.Name("content-type") {
-                headers.append(HTTPField(name: name, value: "application/json"))
-            }
-            return Response(status: .accepted, headers: headers)
+            return Response(
+                status: .accepted,
+                headers: HTTPTransportAdapter.jsonHeaders)
         }
     }
 

@@ -1,16 +1,35 @@
-// AsyncSequence+Extensions.swift
-// core module
-//
-// Created for open-source cleanup: consolidates firstElement() extension
-// that was previously duplicated across cli, mcp-core, mycelium-bin, and
-// websocket-observer targets.
-
 import Foundation
 
 extension AsyncSequence {
-    /// Returns the first element of the sequence, or `nil` if the sequence is empty.
-    public func firstElement() async -> Element? {
+    public func firstElement() async -> Result<Element?, Error> {
         var iterator = makeAsyncIterator()
-        return try? await iterator.next()
+        do {
+            let first = try await iterator.next()
+            return .success(first)
+        } catch {
+            return .failure(error)
+        }
+    }
+
+    /// For streams yielding `Result<Value, MemoryError>`. Returns the first successful value,
+    /// or propagates the first error.
+    public func firstResult<Value>() async -> Result<Value, MemoryError>
+    where Element == Result<Value, MemoryError> {
+        var iterator = makeAsyncIterator()
+        while let result = try? await iterator.next() {
+            switch result {
+            case .success(let value):
+                return .success(value)
+            case .failure(let error):
+                return .failure(error)
+            }
+        }
+        return .failure(MemoryError.graphError("Stream yielded no Results"))
+    }
+}
+
+extension MemoryError {
+    static func graphError(_ message: String) -> MemoryError {
+        .storageFailed(message)
     }
 }

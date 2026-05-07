@@ -7,7 +7,6 @@ import os
 struct ServerHelpers {
     static let logger = Logger(subsystem: "com.mycelium.server", category: "MyceliumServer")
 
-
     static func jsonResponse(_ data: Data) -> Response {
         return Response(status: .ok, body: .init(byteBuffer: ByteBuffer(data: data)))
     }
@@ -48,13 +47,14 @@ struct ServerHelpers {
         request: Request, context: some Hummingbird.RequestContext, graph: MemoryGraphBox
     ) async -> Response {
         let range = parseAPIRange(request.uri.query)
+        let depthStr = parseAPIQueryArray(request.uri.query, "depth").first
+        let depth: Int = {
+            guard let d = depthStr, let value = Int(d) else { return 0 }
+            return value
+        }()
         let sort = parseAPISort(request.uri.query)
 
-        guard let result = await graph.allMemories(in: range, sortOrder: sort).firstElement() else {
-            return jsonResponse(Data("[]".utf8))
-        }
-
-        switch result {
+        switch await graph.allMemories(in: range, depth: depth, sortOrder: sort).firstResult() {
         case .success(let memories):
             let summaries: [[String: Any]] = memories.map { memory in
                 [
@@ -80,15 +80,9 @@ struct ServerHelpers {
             return errorResponse("Invalid UUID: \(identifierString)", status: .badRequest)
         }
 
-        guard
-            let result = await graph.recall(
-                ids: [id], depth: 0, sortOrder: parseAPISort(request.uri.query)
-            ).firstElement()
-        else {
-            return errorResponse("Memory not found")
-        }
-
-        switch result {
+        switch await graph.recall(
+            ids: [id], depth: 0, sortOrder: parseAPISort(request.uri.query)
+        ).firstResult() {
         case .success(let nodes):
             guard let memory = nodes.first, let memory = memory else {
                 return errorResponse("Memory not found", status: .notFound)
@@ -120,15 +114,9 @@ struct ServerHelpers {
             return value
         }()
 
-        guard
-            let result = await graph.buildSummaryNode(
-                ids: [id], depth: depth, sortOrder: .chronological
-            ).firstElement()
-        else {
-            return errorResponse("Memory not found")
-        }
-
-        switch result {
+        switch await graph.buildSummaryNode(
+            ids: [id], depth: depth, sortOrder: .chronological
+        ).firstResult() {
         case .success(let nodes):
             guard let node = nodes.first, let node = node else {
                 return errorResponse("Memory not found", status: .notFound)
@@ -145,6 +133,7 @@ struct ServerHelpers {
         let json: [String: Any] = [
             "id": node.id.uuidString,
             "label": node.label,
+            "depth": node.depth,
             "associations": node.associations.map { summaryNodeToJSON($0) },
         ]
         return json
@@ -155,16 +144,16 @@ struct ServerHelpers {
     ) async -> Response {
         let keywords = parseAPIQueryArray(request.uri.query, "keywords")
         let range = parseAPIRange(request.uri.query)
+        let depthStr = parseAPIQueryArray(request.uri.query, "depth").first
+        let depth: Int = {
+            guard let d = depthStr, let value = Int(d) else { return 0 }
+            return value
+        }()
         let sort = parseAPISort(request.uri.query)
 
-        guard
-            let result = await graph.search(keywords: keywords, in: range, sortOrder: sort)
-                .firstElement()
-        else {
-            return jsonResponse(Data("[]".utf8))
-        }
-
-        switch result {
+        switch await graph.search(keywords: keywords, in: range, depth: depth, sortOrder: sort)
+            .firstResult()
+        {
         case .success(let memories):
             let summaries: [[String: Any]] = memories.map { memory in
                 [
@@ -186,13 +175,14 @@ struct ServerHelpers {
         request: Request, context: some Hummingbird.RequestContext, graph: MemoryGraphBox
     ) async -> Response {
         let range = parseAPIRange(request.uri.query)
+        let depthStr = parseAPIQueryArray(request.uri.query, "depth").first
+        let depth: Int = {
+            guard let d = depthStr, let value = Int(d) else { return 0 }
+            return value
+        }()
         let sort = parseAPISort(request.uri.query)
 
-        guard let result = await graph.adrift(in: range, sortOrder: sort).firstElement() else {
-            return jsonResponse(Data("[]".utf8))
-        }
-
-        switch result {
+        switch await graph.adrift(in: range, depth: depth, sortOrder: sort).firstResult() {
         case .success(let memories):
             let summaries: [[String: Any]] = memories.map { memory in
                 [
@@ -218,34 +208,32 @@ struct ServerHelpers {
         var nodes: [[String: Any]] = []
         var associations: [[String: String]] = []
 
-        if let result = await graph.allMemories(in: range, sortOrder: .chronological).firstElement()
+        switch await graph.allMemories(in: range, depth: 0, sortOrder: .chronological).firstResult()
         {
-            switch result {
-            case .success(let memories):
-                nodes = memories.map { memory in
-                    [
-                        "id": memory.id.uuidString,
-                        "label": memory.label,
-                        "content": memory.content,
-                        "createdAt": ISO8601DateFormatter().string(from: Date.now),
-                        "associationCount": memory.associations.count,
-                    ]
-                }
+        case .success(let memories):
+            nodes = memories.map { memory in
+                [
+                    "id": memory.id.uuidString,
+                    "label": memory.label,
+                    "content": memory.content,
+                    "createdAt": ISO8601DateFormatter().string(from: Date.now),
+                    "associationCount": memory.associations.count,
+                ]
+            }
 
-                let nodeIds = Set(memories.map { $0.id })
-                for memory in memories {
-                    for assocId in memory.associations {
-                        if nodeIds.contains(assocId) {
-                            associations.append([
-                                "from": memory.id.uuidString,
-                                "to": assocId.uuidString,
-                            ])
-                        }
+            let nodeIds = Set(memories.map { $0.id })
+            for memory in memories {
+                for assocId in memory.associations {
+                    if nodeIds.contains(assocId) {
+                        associations.append([
+                            "from": memory.id.uuidString,
+                            "to": assocId.uuidString,
+                        ])
                     }
                 }
-            case .failure(let error):
-                return errorResponse(error.localizedDescription)
             }
+        case .failure(let error):
+            return errorResponse(error.localizedDescription)
         }
 
         let json: [String: Any] = [

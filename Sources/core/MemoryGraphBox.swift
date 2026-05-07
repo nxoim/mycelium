@@ -20,9 +20,10 @@ public final class MemoryGraphBox: @unchecked Sendable {
     private let _recall: ([UUID], Int, SortOrder) -> AsyncStream<Result<[Memory?], MemoryError>>
     private let _recallFully: ([UUID], SortOrder) -> AsyncStream<Result<[String?], MemoryError>>
     private let _search:
-        ([String], Range<Int>, SortOrder) -> AsyncStream<Result<[Memory], MemoryError>>
-    private let _allMemories: (Range<Int>, SortOrder) -> AsyncStream<Result<[Memory], MemoryError>>
-    private let _adrift: (Range<Int>, SortOrder) -> AsyncStream<Result<[Memory], MemoryError>>
+        ([String], Range<Int>, Int, SortOrder) -> AsyncStream<Result<[Memory], MemoryError>>
+    private let _allMemories:
+        (Range<Int>, Int, SortOrder) -> AsyncStream<Result<[Memory], MemoryError>>
+    private let _adrift: (Range<Int>, Int, SortOrder) -> AsyncStream<Result<[Memory], MemoryError>>
     private let _associate: (UUID, [UUID]) -> Result<Void, MemoryError>
     private let _dissociate: (UUID, [UUID]) -> Result<Void, MemoryError>
     private let _forget: ([UUID]) -> Result<Void, MemoryError>
@@ -35,11 +36,11 @@ public final class MemoryGraphBox: @unchecked Sendable {
     private let _buildSummaryNode:
         ([UUID], Int, SortOrder) -> AsyncStream<Result<[MemorySummaryNode?], MemoryError>>
 
-    public var onMemorized: ([UUID]) -> Void = { _ in }
-    public var onForgotten: ([UUID]) -> Void = { _ in }
-    public var onAssociated: (UUID, [UUID]) -> Void = { _, _ in }
-    public var onDissociated: (UUID, [UUID]) -> Void = { _, _ in }
-    public var onImported: () -> Void = {}
+    public var onMemorized: @Sendable ([UUID]) -> Void = { _ in }
+    public var onForgotten: @Sendable ([UUID]) -> Void = { _ in }
+    public var onAssociated: @Sendable (UUID, [UUID]) -> Void = { _, _ in }
+    public var onDissociated: @Sendable (UUID, [UUID]) -> Void = { _, _ in }
+    public var onImported: @Sendable () -> Void = {}
 
     public init<G: MemoryGraph>(_ graph: G) {
         _memorize = { memories in graph.memorize(memories) }
@@ -47,11 +48,15 @@ public final class MemoryGraphBox: @unchecked Sendable {
             graph.recall(ids: ids, depth: depth, sortOrder: sortOrder)
         }
         _recallFully = { ids, sortOrder in graph.recallFully(ids: ids, sortOrder: sortOrder) }
-        _search = { keywords, range, sortOrder in
-            graph.search(keywords: keywords, in: range, sortOrder: sortOrder)
+        _search = { keywords, range, depth, sortOrder in
+            graph.search(keywords: keywords, in: range, depth: depth, sortOrder: sortOrder)
         }
-        _allMemories = { range, sortOrder in graph.allMemories(in: range, sortOrder: sortOrder) }
-        _adrift = { range, sortOrder in graph.adrift(in: range, sortOrder: sortOrder) }
+        _allMemories = { range, depth, sortOrder in
+            graph.allMemories(in: range, depth: depth, sortOrder: sortOrder)
+        }
+        _adrift = { range, depth, sortOrder in
+            graph.adrift(in: range, depth: depth, sortOrder: sortOrder)
+        }
         _associate = { id, withIds in graph.associate(id, with: withIds) }
         _dissociate = { id, fromIds in graph.dissociate(id, from: fromIds) }
         _forget = { ids in graph.forget(ids) }
@@ -88,22 +93,22 @@ public final class MemoryGraphBox: @unchecked Sendable {
         _recallFully(ids, sortOrder)
     }
 
-    public func search(keywords: [String], in range: Range<Int>, sortOrder: SortOrder)
+    public func search(keywords: [String], in range: Range<Int>, depth: Int, sortOrder: SortOrder)
         -> AsyncStream<Result<[Memory], MemoryError>>
     {
-        _search(keywords, range, sortOrder)
+        _search(keywords, range, depth, sortOrder)
     }
 
-    public func allMemories(in range: Range<Int>, sortOrder: SortOrder) -> AsyncStream<
+    public func allMemories(in range: Range<Int>, depth: Int, sortOrder: SortOrder) -> AsyncStream<
         Result<[Memory], MemoryError>
     > {
-        _allMemories(range, sortOrder)
+        _allMemories(range, depth, sortOrder)
     }
 
-    public func adrift(in range: Range<Int>, sortOrder: SortOrder) -> AsyncStream<
+    public func adrift(in range: Range<Int>, depth: Int, sortOrder: SortOrder) -> AsyncStream<
         Result<[Memory], MemoryError>
     > {
-        _adrift(range, sortOrder)
+        _adrift(range, depth, sortOrder)
     }
 
     public func associate(_ id: UUID, with relatedIds: [UUID]) -> Result<Void, MemoryError> {

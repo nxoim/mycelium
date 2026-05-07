@@ -17,6 +17,7 @@ let package = Package(
     dependencies: [
         .package(url: "https://github.com/groue/GRDB.swift.git", from: "6.0.0"),
         .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.3.0"),
+        .package(url: "https://github.com/apple/swift-atomics.git", from: "1.3.0"),
         .package(url: "https://github.com/modelcontextprotocol/swift-sdk.git", from: "0.12.0"),
         .package(url: "https://github.com/hummingbird-project/hummingbird.git", from: "2.0.0"),
         .package(
@@ -26,7 +27,8 @@ let package = Package(
         .target(
             name: "core",
             dependencies: [
-                .product(name: "GRDB", package: "GRDB.swift")
+                .product(name: "GRDB", package: "GRDB.swift"),
+                .product(name: "Atomics", package: "swift-atomics"),
             ],
             swiftSettings: [
                 .enableExperimentalFeature("StrictConcurrency")
@@ -38,6 +40,7 @@ let package = Package(
                 "core",
                 .product(name: "MCP", package: "swift-sdk"),
                 .product(name: "Hummingbird", package: "hummingbird"),
+                .product(name: "Atomics", package: "swift-atomics"),
             ],
             swiftSettings: [
                 .enableExperimentalFeature("StrictConcurrency")
@@ -92,21 +95,13 @@ let package = Package(
             ]
         ),
         .testTarget(
-            name: "myceliumTests",
-            dependencies: ["core"],
-            swiftSettings: [
-                .enableExperimentalFeature("StrictConcurrency")
-            ]
-        ),
-        .testTarget(
-            name: "myceliumServerTests",
+            name: "tests",
             dependencies: [
                 "core",
+                "cli",
+                "mcp-stdio",
                 "websocket-observer",
             ],
-            swiftSettings: [
-                .enableExperimentalFeature("StrictConcurrency")
-            ]
         ),
     ]
 )

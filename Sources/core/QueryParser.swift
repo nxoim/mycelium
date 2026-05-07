@@ -1,24 +1,34 @@
 import Foundation
 
+public enum QuerySortOrder {
+    public static let chronological = "chronological"
+    public static let reverseChronological = "reverseChronological"
+    public static let relevance = "relevance"
+}
+
+public enum QueryDepth {
+    public static let noAssociations = -1
+    public static let noAssociationsString = "no-associations"
+    public static let defaultDepth = 0
+}
+
 public enum QueryParser {
     public static func parseSortOrder(_ input: String?) -> SortOrder {
-        switch input {
-        case "chronological": return .chronological
-        case "reverseChronological": return .reverseChronological
-        case "relevance": return .relevance
-        case nil, _: return .chronological
-        }
+        if input == QuerySortOrder.chronological { return .chronological }
+        if input == QuerySortOrder.reverseChronological { return .reverseChronological }
+        if input == QuerySortOrder.relevance { return .relevance }
+        return .chronological
     }
 
     public static func parseSortOrderStrict(_ input: String?) -> SortOrder? {
-        switch input {
-        case "chronological": return .chronological
-        case "reverseChronological": return .reverseChronological
-        case "relevance": return .relevance
-        default: return nil
-        }
+        if input == QuerySortOrder.chronological { return .chronological }
+        if input == QuerySortOrder.reverseChronological { return .reverseChronological }
+        if input == QuerySortOrder.relevance { return .relevance }
+        return nil
     }
+}
 
+extension QueryParser {
     public static func parseRange(_ input: String?) -> Range<Int>? {
         guard let input = input else { return nil }
         let parts = input.split(separator: ":").map(String.init)
@@ -30,7 +40,9 @@ public enum QueryParser {
         }
         return lower..<upper
     }
+}
 
+extension QueryParser {
     public static func parseQueryArray(_ query: String?, _ key: String) -> [String] {
         guard let query = query, let value = parseQueryParam(query, key) else { return [] }
         return value.split(separator: ",").map(String.init)
@@ -46,5 +58,14 @@ public enum QueryParser {
             }
         }
         return nil
+    }
+}
+
+extension QueryParser {
+    public static func parseDepth(_ input: String) -> Int {
+        if input == QueryDepth.noAssociationsString {
+            return QueryDepth.noAssociations
+        }
+        return Int(input) ?? QueryDepth.defaultDepth
     }
 }

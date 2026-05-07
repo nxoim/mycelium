@@ -25,8 +25,8 @@ struct WebSocketHandler {
         var nodes: [GraphNode] = []
         var assocList: [(from: UUID, to: UUID)] = []
 
-        let result = await graph.allMemories(in: 0..<10000, sortOrder: .chronological)
-            .firstElement()
+        let result = await graph.allMemories(in: 0..<10000, depth: 0, sortOrder: .chronological)
+            .firstResult()
         if case .success(let memories) = result {
             nodes = memories.map { memory in
                 GraphNode(
@@ -243,17 +243,13 @@ struct WebSocketHandler {
         let sort =
             (params["sort"] as? String).flatMap { QueryParser.parseSortOrderStrict($0) }
             ?? .chronological
-        if let result = await graph.recall(ids: ids, depth: depth, sortOrder: sort)
-            .firstElement()
-        {
-            switch result {
-            case .success(let memories):
-                let valid = memories.compactMap { $0 }
-                await wsManager.send(connectionId, .commandResult(.memories(valid)))
-            case .failure(let error):
-                await wsManager.send(
-                    connectionId, .commandError(message: error.localizedDescription))
-            }
+        switch await graph.recall(ids: ids, depth: depth, sortOrder: sort).firstResult() {
+        case .success(let memories):
+            let valid = memories.compactMap { $0 }
+            await wsManager.send(connectionId, .commandResult(.memories(valid)))
+        case .failure(let error):
+            await wsManager.send(
+                connectionId, .commandError(message: error.localizedDescription))
         }
     }
 
@@ -267,17 +263,13 @@ struct WebSocketHandler {
             return
         }
         let ids = idsStr.compactMap { UUID(uuidString: $0) }
-        if let result = await graph.recallFully(ids: ids, sortOrder: .chronological)
-            .firstElement()
-        {
-            switch result {
-            case .success(let contents):
-                let valid = contents.compactMap { $0 }
-                await wsManager.send(connectionId, .commandResult(.contents(valid)))
-            case .failure(let error):
-                await wsManager.send(
-                    connectionId, .commandError(message: error.localizedDescription))
-            }
+        switch await graph.recallFully(ids: ids, sortOrder: .chronological).firstResult() {
+        case .success(let contents):
+            let valid = contents.compactMap { $0 }
+            await wsManager.send(connectionId, .commandResult(.contents(valid)))
+        case .failure(let error):
+            await wsManager.send(
+                connectionId, .commandError(message: error.localizedDescription))
         }
     }
 
@@ -291,19 +283,18 @@ struct WebSocketHandler {
             return
         }
         let range = (params["range"] as? String).flatMap { QueryParser.parseRange($0) } ?? (0..<50)
+        let depth = (params["depth"] as? Int) ?? 0
         let sort =
             (params["sort"] as? String).flatMap { QueryParser.parseSortOrderStrict($0) }
             ?? .chronological
-        if let result = await graph.search(keywords: keywords, in: range, sortOrder: sort)
-            .firstElement()
+        switch await graph.search(keywords: keywords, in: range, depth: depth, sortOrder: sort)
+            .firstResult()
         {
-            switch result {
-            case .success(let nodes):
-                await wsManager.send(connectionId, .commandResult(.nodes(nodes)))
-            case .failure(let error):
-                await wsManager.send(
-                    connectionId, .commandError(message: error.localizedDescription))
-            }
+        case .success(let nodes):
+            await wsManager.send(connectionId, .commandResult(.nodes(nodes)))
+        case .failure(let error):
+            await wsManager.send(
+                connectionId, .commandError(message: error.localizedDescription))
         }
     }
 
@@ -312,17 +303,16 @@ struct WebSocketHandler {
         wsManager: WebSocketManager, graph: MemoryGraphBox
     ) async {
         let range = (params["range"] as? String).flatMap { QueryParser.parseRange($0) } ?? (0..<50)
+        let depth = (params["depth"] as? Int) ?? 0
         let sort =
             (params["sortOrder"] as? String).flatMap { QueryParser.parseSortOrderStrict($0) }
             ?? .chronological
-        if let result = await graph.allMemories(in: range, sortOrder: sort).firstElement() {
-            switch result {
-            case .success(let nodes):
-                await wsManager.send(connectionId, .commandResult(.nodes(nodes)))
-            case .failure(let error):
-                await wsManager.send(
-                    connectionId, .commandError(message: error.localizedDescription))
-            }
+        switch await graph.allMemories(in: range, depth: depth, sortOrder: sort).firstResult() {
+        case .success(let nodes):
+            await wsManager.send(connectionId, .commandResult(.nodes(nodes)))
+        case .failure(let error):
+            await wsManager.send(
+                connectionId, .commandError(message: error.localizedDescription))
         }
     }
 
@@ -331,17 +321,16 @@ struct WebSocketHandler {
         wsManager: WebSocketManager, graph: MemoryGraphBox
     ) async {
         let range = (params["range"] as? String).flatMap { QueryParser.parseRange($0) } ?? (0..<50)
+        let depth = (params["depth"] as? Int) ?? 0
         let sort =
             (params["sort"] as? String).flatMap { QueryParser.parseSortOrderStrict($0) }
             ?? .chronological
-        if let result = await graph.adrift(in: range, sortOrder: sort).firstElement() {
-            switch result {
-            case .success(let nodes):
-                await wsManager.send(connectionId, .commandResult(.nodes(nodes)))
-            case .failure(let error):
-                await wsManager.send(
-                    connectionId, .commandError(message: error.localizedDescription))
-            }
+        switch await graph.adrift(in: range, depth: depth, sortOrder: sort).firstResult() {
+        case .success(let nodes):
+            await wsManager.send(connectionId, .commandResult(.nodes(nodes)))
+        case .failure(let error):
+            await wsManager.send(
+                connectionId, .commandError(message: error.localizedDescription))
         }
     }
 

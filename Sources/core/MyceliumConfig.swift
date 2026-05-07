@@ -1,5 +1,9 @@
 import Foundation
 
+public enum DatabaseConfig {
+    public static let defaultFileName = "mycelium.sqlite"
+}
+
 public struct MyceliumConfig: Sendable {
 
     public let dbPath: String?
@@ -39,5 +43,9 @@ public struct MyceliumConfig: Sendable {
         }
         return URL(fileURLWithPath: CommandLine.arguments[0])
             .deletingLastPathComponent()
+    }
+
+    public var databaseURL: URL {
+        databaseDirectory.appendingPathComponent(DatabaseConfig.defaultFileName)
     }
 }

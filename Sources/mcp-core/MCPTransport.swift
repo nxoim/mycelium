@@ -2,9 +2,11 @@ import Foundation
 import MCP
 import core
 
-/// Shared MCP server setup for stdio and HTTP transports.
-/// Avoids duplication between mcp-server and mcp-stdio executables.
 public struct MCPTransport {
+
+    private static let defaultInstructions = """
+        You have a memory system. You can remember, forget, and associate memories. Use the available tools to manage your knowledge base.
+        """
 
     public static func makeServer(
         graph: MemoryGraphBox,
@@ -15,9 +17,7 @@ public struct MCPTransport {
         let server = Server(
             name: name,
             version: version,
-            instructions: instructions ?? """
-                You have a memory system. You can remember, forget, and associate memories. Use the available tools to manage your knowledge base.
-                """,
+            instructions: instructions ?? defaultInstructions,
             capabilities: .init(tools: .init(listChanged: true))
         )
 

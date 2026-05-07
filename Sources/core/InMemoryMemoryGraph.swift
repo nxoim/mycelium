@@ -13,6 +13,40 @@ private struct PersistedNode: Codable {
     let content: String
     let associationIDs: [UUID]
     let createdAt: Date?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case label
+        case content
+        case associationIDs
+        case createdAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        label = try container.decode(String.self, forKey: .label)
+        content = try container.decode(String.self, forKey: .content)
+        associationIDs = try container.decodeIfPresent([UUID].self, forKey: .associationIDs) ?? []
+        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(label, forKey: .label)
+        try container.encode(content, forKey: .content)
+        try container.encode(associationIDs, forKey: .associationIDs)
+        try container.encodeIfPresent(createdAt, forKey: .createdAt)
+    }
+
+    init(id: UUID, label: String, content: String, associationIDs: [UUID], createdAt: Date?) {
+        self.id = id
+        self.label = label
+        self.content = content
+        self.associationIDs = associationIDs
+        self.createdAt = createdAt
+    }
 }
 
 /// In-memory `MemoryGraph` implementation. Uses a serial DispatchQueue for all state access,
@@ -31,7 +65,7 @@ public final class InMemoryMemoryGraph: MemoryGraph, @unchecked Sendable {
     )
     private typealias ContentEntry = AsyncStream<Result<[String?], MemoryError>>.Continuation
     private typealias ListEntry = (
-        range: Range<Int>, sortOrder: SortOrder,
+        range: Range<Int>, depth: Int, sortOrder: SortOrder,
         continuation: AsyncStream<Result<[Memory], MemoryError>>.Continuation
     )
     private typealias AssocEntry = (
@@ -39,7 +73,7 @@ public final class InMemoryMemoryGraph: MemoryGraph, @unchecked Sendable {
         continuation: AsyncStream<Result<[Memory], MemoryError>>.Continuation
     )
     private typealias SearchEntry = (
-        keywords: [String], range: Range<Int>, sortOrder: SortOrder,
+        keywords: [String], range: Range<Int>, depth: Int, sortOrder: SortOrder,
         continuation: AsyncStream<Result<[Memory], MemoryError>>.Continuation
     )
 
@@ -52,22 +86,27 @@ public final class InMemoryMemoryGraph: MemoryGraph, @unchecked Sendable {
 
     public init() {}
 
-    private func buildNode(_ stored: StoredNode, depth: Int) -> Memory {
-        if depth == 0 {
-            return Memory(
-                id: stored.id, label: stored.label, content: stored.content,
-                associations: Array(associations[stored.id] ?? []))
-        }
+    private func buildNode(
+        _ stored: StoredNode, depth: Int, path: Set<UUID>
+    ) -> Memory {
+        let nodePath = path.union([stored.id])
+
         if depth < 0 {
             return Memory(
-                id: stored.id, label: stored.label, content: stored.content, associations: [])
+                id: stored.id, label: stored.label, content: stored.content,
+                associations: [])
         }
-        let children =
-            associations[stored.id]?.compactMap { store[$0] }.map { child in
-                depth > 0
-                    ? buildNode(child, depth: depth - 1)
-                    : Memory(id: child.id, label: child.label, content: "", associations: [])
-            } ?? []
+
+        let childIds = associations[stored.id] ?? []
+        let children = childIds.compactMap { childId -> Memory? in
+            guard let child = store[childId] else { return nil }
+            if nodePath.contains(childId) { return nil }
+            if depth == 0 {
+                return Memory(
+                    id: child.id, label: child.label, content: "", associations: [])
+            }
+            return buildNode(child, depth: depth - 1, path: nodePath)
+        }
         return Memory(
             id: stored.id, label: stored.label, content: stored.content,
             associations: children.map { $0.id })
@@ -103,14 +142,10 @@ public final class InMemoryMemoryGraph: MemoryGraph, @unchecked Sendable {
     }
 
     private func paginate<T>(_ array: [T], range: Range<Int>) -> [T] {
-        // If specified range exceeds total amount of items to paginate, load all items
         if range.lowerBound >= array.count {
             return array
         }
         let upper = min(range.upperBound, array.count)
-        if range.lowerBound == 0 && upper == array.count {
-            return array
-        }
         return Array(array[range.lowerBound..<upper])
     }
 
@@ -137,16 +172,14 @@ public final class InMemoryMemoryGraph: MemoryGraph, @unchecked Sendable {
         invalidateReferencedCache()
     }
 
-    // Called from within queue — notifies all active streams of current state
     private func notifyAll(affectedIDs: Set<UUID>) {
         let hasAllSubscribers = !allNodesStreams.isEmpty
         let hasSearchSubscribers = !searchStreams.isEmpty
         let hasOrphanSubscribers = !orphanStreams.isEmpty
 
-        // Node-specific streams
         for id in affectedIDs {
             nodeStreams[id]?.values.forEach { entry in
-                let value = store[id].map { buildNode($0, depth: entry.depth) }
+                let value = store[id].map { buildNode($0, depth: entry.depth, path: []) }
                 entry.continuation.yield(.success([value]))
             }
             contentStreams[id]?.values.forEach { continuation in
@@ -156,18 +189,17 @@ public final class InMemoryMemoryGraph: MemoryGraph, @unchecked Sendable {
                 guard let stored = store[id] else { return }
                 let nodes = associations[stored.id]?.compactMap { store[$0] } ?? []
                 let paged = paginate(nodes, range: entry.range).map {
-                    buildNode($0, depth: entry.depth)
+                    buildNode($0, depth: entry.depth, path: [])
                 }
                 entry.continuation.yield(.success(paged))
             }
         }
 
-        // Global streams — only rebuild if there are subscribers
         if hasAllSubscribers {
             let all = Array(store.values)
             allNodesStreams.values.forEach { entry in
                 let paged = paginate(sorted(all, by: entry.sortOrder), range: entry.range)
-                entry.continuation.yield(.success(paged.map { buildNode($0, depth: 0) }))
+                entry.continuation.yield(.success(paged.map { buildNode($0, depth: 0, path: []) }))
             }
         }
 
@@ -183,7 +215,7 @@ public final class InMemoryMemoryGraph: MemoryGraph, @unchecked Sendable {
                 let paged = paginate(
                     sorted(matched, by: entry.sortOrder, keywords: entry.keywords),
                     range: entry.range)
-                entry.continuation.yield(.success(paged.map { buildNode($0, depth: 0) }))
+                entry.continuation.yield(.success(paged.map { buildNode($0, depth: 0, path: []) }))
             }
         }
 
@@ -191,25 +223,20 @@ public final class InMemoryMemoryGraph: MemoryGraph, @unchecked Sendable {
             let orphans = currentOrphans()
             orphanStreams.values.forEach { entry in
                 let paged = paginate(sorted(orphans, by: entry.sortOrder), range: entry.range)
-                entry.continuation.yield(.success(paged.map { buildNode($0, depth: 0) }))
+                entry.continuation.yield(.success(paged.map { buildNode($0, depth: 0, path: []) }))
             }
         }
     }
 
     public func memorize(_ memories: [Memory]) -> Result<[UUID], MemoryError> {
-        // Use provided IDs (not generate new ones) and create bidirectional associations
         var affectedIDs: Set<UUID> = []
         queue.sync {
-            // Pass 1: Store all nodes first
             for memory in memories {
                 store[memory.id] = StoredNode(
                     id: memory.id, label: memory.label, content: memory.content, createdAt: Date.now
                 )
             }
 
-            // Pass 2: Create bidirectional associations (all nodes now exist)
-            // Link new memory to each declared target (bidirectional)
-            // Then link all targets to each other (omni-directional)
             for memory in memories {
                 for relatedId in memory.associations {
                     if store[relatedId] != nil {
@@ -220,7 +247,7 @@ public final class InMemoryMemoryGraph: MemoryGraph, @unchecked Sendable {
                     }
                 }
             }
-            // Pass 3: Create omni-directional links among declared targets
+
             for memory in memories {
                 let validTargets = memory.associations.filter { store[$0] != nil }
                 for i in validTargets.indices {
@@ -237,14 +264,14 @@ public final class InMemoryMemoryGraph: MemoryGraph, @unchecked Sendable {
                 }
             }
 
-            // Always notify global streams about new nodes, and node-specific streams about new associations
             if !affectedIDs.isEmpty {
                 invalidateReferencedCache()
                 notifyAll(affectedIDs: affectedIDs)
             } else {
                 allNodesStreams.values.forEach { entry in
                     let paged = paginate(sortedStore(by: entry.sortOrder), range: entry.range)
-                    entry.continuation.yield(.success(paged.map { buildNode($0, depth: 0) }))
+                    entry.continuation.yield(
+                        .success(paged.map { buildNode($0, depth: 0, path: []) }))
                 }
                 searchStreams.values.forEach { entry in
                     let matched = store.values.filter { storedNode in
@@ -256,12 +283,14 @@ public final class InMemoryMemoryGraph: MemoryGraph, @unchecked Sendable {
                     let paged = paginate(
                         sorted(matched, by: entry.sortOrder, keywords: entry.keywords),
                         range: entry.range)
-                    entry.continuation.yield(.success(paged.map { buildNode($0, depth: 0) }))
+                    entry.continuation.yield(
+                        .success(paged.map { buildNode($0, depth: 0, path: []) }))
                 }
                 orphanStreams.values.forEach { entry in
                     let paged = paginate(
                         sorted(currentOrphans(), by: entry.sortOrder), range: entry.range)
-                    entry.continuation.yield(.success(paged.map { buildNode($0, depth: 0) }))
+                    entry.continuation.yield(
+                        .success(paged.map { buildNode($0, depth: 0, path: []) }))
                 }
             }
         }
@@ -275,8 +304,21 @@ public final class InMemoryMemoryGraph: MemoryGraph, @unchecked Sendable {
         let streamID = UUID()
         return AsyncStream { continuation in
             queue.sync {
-                let results = ids.map { id in store[id].map { buildNode($0, depth: depth) } }
-                continuation.yield(.success(results))
+                var allMemories: [Memory?] = []
+
+                for id in ids {
+                    if let stored = store[id] {
+                        var visited: Set<UUID> = [stored.id]
+                        expandNodeToFlatArray(
+                            stored, depth: depth, into: &allMemories, path: [stored.id],
+                            visited: &visited)
+                    } else {
+                        allMemories.append(nil)
+                    }
+                }
+
+                continuation.yield(.success(allMemories))
+
                 for id in ids where store[id] != nil {
                     nodeStreams[id, default: [:]][streamID] = (
                         depth: depth, continuation: continuation
@@ -293,32 +335,138 @@ public final class InMemoryMemoryGraph: MemoryGraph, @unchecked Sendable {
         }
     }
 
-    public func buildSummaryNode(ids: [UUID], depth: Int, sortOrder: SortOrder) -> AsyncStream<
-        Result<[MemorySummaryNode?], MemoryError>
-    > {
-        return AsyncStream { continuation in
-            queue.sync {
-                let results = ids.map { id in
-                    store[id].map { stored in
-                        MemorySummaryNode(
-                            id: stored.id, label: stored.label,
-                            associations: buildSummaryChildren(for: stored.id, depth: depth))
-                    }
+    private func expandNodeToFlatArray(
+        _ stored: StoredNode, depth: Int, into memories: inout [Memory?],
+        path: Set<UUID>, visited: inout Set<UUID>
+    ) {
+        let nodePath = path.union([stored.id])
+        let assocIds: [UUID] = Array(associations[stored.id] ?? [])
+
+        let mem = Memory(
+            id: stored.id, label: stored.label, content: stored.content,
+            associations: assocIds)
+        memories.append(mem)
+        visited.insert(stored.id)
+
+        if depth > 0 {
+            for childId in assocIds {
+                if nodePath.contains(childId) { continue }
+                if visited.contains(childId) { continue }
+                if let child = store[childId] {
+                    expandNodeToFlatArray(
+                        child, depth: depth - 1, into: &memories,
+                        path: nodePath, visited: &visited)
                 }
-                continuation.yield(.success(results))
             }
         }
     }
 
-    private func buildSummaryChildren(for id: UUID, depth: Int) -> [MemorySummaryNode] {
-        guard let childIds = associations[id], !childIds.isEmpty else { return [] }
-        return childIds.compactMap { childId in
-            store[childId].map { child in
-                MemorySummaryNode(
-                    id: child.id, label: child.label,
-                    associations: depth > 0
-                        ? buildSummaryChildren(for: child.id, depth: depth - 1) : [])
+    public func buildSummaryNode(ids: [UUID], depth: Int, sortOrder: SortOrder) -> AsyncStream<
+        Result<[MemorySummaryNode?], MemoryError>
+    > {
+        return AsyncStream { continuation in
+            var snapshot: [UUID: MemorySummaryNode] = [:]
+            queue.sync {
+                for id in ids {
+                    snapshot[id] =
+                        store[id].map { stored in
+                            MemorySummaryNode(
+                                id: stored.id, label: stored.label, depth: 0, associations: [])
+                        } ?? MemorySummaryNode(id: id, label: "", depth: 0, associations: [])
+                }
             }
+
+            var results: [MemorySummaryNode?] = Array(repeating: nil, count: ids.count)
+            for (index, id) in ids.enumerated() {
+                if let node = snapshot[id] {
+                    var visited: Set<UUID> = [id]
+                    let children = buildSummaryChildrenSync(
+                        for: id, depth: depth, path: [], visited: &visited)
+                    results[index] = MemorySummaryNode(
+                        id: node.id, label: node.label, depth: 0, associations: children)
+                }
+            }
+            continuation.yield(.success(results))
+        }
+    }
+
+    private func buildSummaryChildrenSync(
+        for id: UUID, depth: Int, path: Set<UUID>, visited: inout Set<UUID>
+    ) -> [MemorySummaryNode] {
+        let childIds = associations[id] ?? []
+        let nodePath = path.union([id])
+
+        var children: [MemorySummaryNode] = []
+        for childId in childIds {
+            if visited.contains(childId) { continue }
+            if let childNode = buildSummaryChildSync(
+                for: childId, depth: depth + 1, path: nodePath, visited: &visited
+            ) {
+                children.append(childNode)
+            }
+        }
+        return children
+    }
+
+    private func buildSummaryChildSync(
+        for id: UUID, depth: Int, path: Set<UUID>, visited: inout Set<UUID>
+    ) -> MemorySummaryNode? {
+        guard let stored = store[id] else { return nil }
+        if path.contains(id) { return nil }
+        if visited.contains(id) { return nil }
+        visited.insert(id)
+
+        let childIds = associations[id] ?? []
+        if depth <= 0 || childIds.isEmpty {
+            return MemorySummaryNode(
+                id: stored.id, label: stored.label, depth: depth, associations: [])
+        }
+
+        var childAssociations: [MemorySummaryNode] = []
+        let childPath = path.union([id])
+        for childId in childIds {
+            if let childNode = buildSummaryChildSync(
+                for: childId, depth: depth - 1, path: childPath, visited: &visited
+            ) {
+                childAssociations.append(childNode)
+            }
+        }
+        return MemorySummaryNode(
+            id: stored.id, label: stored.label, depth: depth, associations: childAssociations)
+    }
+
+    private func buildSummaryChildren(
+        for id: UUID, depth: Int, path: Set<UUID>, visited: inout Set<UUID>
+    ) async -> [MemorySummaryNode] {
+        let childIds = associations[id] ?? []
+        let nodePath = path.union([id])
+
+        // Local copy of visited to avoid inout capture by escaping closure
+        let taskVisited = visited
+        return await withTaskGroup(
+            of: MemorySummaryNode?.self, returning: [MemorySummaryNode].self
+        ) { group in
+            for childId in childIds {
+                group.addTask { [self, taskVisited] in
+                    guard let child = self.store[childId] else { return nil }
+                    if nodePath.contains(childId) { return nil }
+
+                    var childVisited = taskVisited
+                    let children =
+                        depth > 0
+                        ? await self.buildSummaryChildren(
+                            for: childId, depth: depth - 1, path: nodePath, visited: &childVisited)
+                        : []
+                    return MemorySummaryNode(
+                        id: child.id, label: child.label, associations: children)
+                }
+            }
+
+            var results: [MemorySummaryNode] = []
+            for await node in group {
+                if let node = node { results.append(node) }
+            }
+            return results
         }
     }
 
@@ -344,7 +492,7 @@ public final class InMemoryMemoryGraph: MemoryGraph, @unchecked Sendable {
         }
     }
 
-    public func search(keywords: [String], in range: Range<Int>, sortOrder: SortOrder)
+    public func search(keywords: [String], in range: Range<Int>, depth: Int, sortOrder: SortOrder)
         -> AsyncStream<Result<[Memory], MemoryError>>
     {
         let streamID = UUID()
@@ -358,9 +506,9 @@ public final class InMemoryMemoryGraph: MemoryGraph, @unchecked Sendable {
                 }
                 let paged = paginate(
                     sorted(matched, by: sortOrder, keywords: keywords), range: range)
-                continuation.yield(.success(paged.map { buildNode($0, depth: 0) }))
+                continuation.yield(.success(paged.map { buildNode($0, depth: depth, path: []) }))
                 searchStreams[streamID] = (
-                    keywords: keywords, range: range, sortOrder: sortOrder,
+                    keywords: keywords, range: range, depth: depth, sortOrder: sortOrder,
                     continuation: continuation
                 )
             }
@@ -372,16 +520,16 @@ public final class InMemoryMemoryGraph: MemoryGraph, @unchecked Sendable {
         }
     }
 
-    public func allMemories(in range: Range<Int>, sortOrder: SortOrder) -> AsyncStream<
+    public func allMemories(in range: Range<Int>, depth: Int, sortOrder: SortOrder) -> AsyncStream<
         Result<[Memory], MemoryError>
     > {
         let streamID = UUID()
         return AsyncStream { continuation in
             queue.sync {
                 let paged = paginate(sorted(Array(store.values), by: sortOrder), range: range)
-                continuation.yield(.success(paged.map { buildNode($0, depth: 0) }))
+                continuation.yield(.success(paged.map { buildNode($0, depth: depth, path: []) }))
                 allNodesStreams[streamID] = (
-                    range: range, sortOrder: sortOrder, continuation: continuation
+                    range: range, depth: depth, sortOrder: sortOrder, continuation: continuation
                 )
             }
             continuation.onTermination = { [queue] _ in
@@ -406,7 +554,7 @@ public final class InMemoryMemoryGraph: MemoryGraph, @unchecked Sendable {
                 }
                 let childIds = associations[id]?.map { $0 } ?? []
                 let paged = paginate(childIds, range: range).compactMap { store[$0] }.map {
-                    buildNode($0, depth: depth)
+                    buildNode($0, depth: depth, path: [])
                 }
                 continuation.yield(.success(paged))
                 assocStreams[id, default: [:]][streamID] = (
@@ -421,7 +569,7 @@ public final class InMemoryMemoryGraph: MemoryGraph, @unchecked Sendable {
         }
     }
 
-    public func adrift(in range: Range<Int>, sortOrder: SortOrder) -> AsyncStream<
+    public func adrift(in range: Range<Int>, depth: Int, sortOrder: SortOrder) -> AsyncStream<
         Result<[Memory], MemoryError>
     > {
         let streamID = UUID()
@@ -429,9 +577,9 @@ public final class InMemoryMemoryGraph: MemoryGraph, @unchecked Sendable {
             queue.sync {
                 let orphans = currentOrphans()
                 let paged = paginate(sorted(orphans, by: sortOrder), range: range)
-                continuation.yield(.success(paged.map { buildNode($0, depth: 0) }))
+                continuation.yield(.success(paged.map { buildNode($0, depth: depth, path: []) }))
                 orphanStreams[streamID] = (
-                    range: range, sortOrder: sortOrder, continuation: continuation
+                    range: range, depth: depth, sortOrder: sortOrder, continuation: continuation
                 )
             }
             continuation.onTermination = { [queue] _ in
@@ -481,7 +629,7 @@ public final class InMemoryMemoryGraph: MemoryGraph, @unchecked Sendable {
                 }
 
                 if !missingIDs.isEmpty || !selfIDs.isEmpty {
-                    // still mark as done so we return the error below
+                    // fall through to error return
                 } else {
                     invalidateReferencedCache()
                     notifyAll(affectedIDs: affectedIDs)
@@ -492,43 +640,40 @@ public final class InMemoryMemoryGraph: MemoryGraph, @unchecked Sendable {
             }
         }
         if !selfIDs.isEmpty {
-            let idsList = selfIDs.map { $0.uuidString }.joined(separator: ", ")
-            return .failure(
-                .associationFailed(
-                    "Association failed because memory(\(idsList)) is the same as the target. Self-association is not allowed."
-                ))
+            return .failure(.associationFailed("Self-association is not allowed"))
         }
         if !missingIDs.isEmpty {
             let idsList = missingIDs.map { $0.uuidString }.joined(separator: ", ")
-            return .failure(
-                .associationFailed(
-                    "Association failed because memory(\(idsList)) did not exist. Create a new memory with full contents indicating there is no knowledge about the memory."
-                ))
+            return .failure(.associationFailed("Memory not found: \(idsList)"))
         }
         if didAssociate {
             recordHistory(
                 type: .associate, affectedIds: [id] + Array(affectedIDs).filter { $0 != id })
         }
-        return didAssociate ? .success(()) : .failure(.memoryNotFound(errorID!))
+        return didAssociate ? .success(()) : .failure(.memoryNotFound(errorID ?? id))
     }
 
     public func dissociate(_ id: UUID, from relatedIds: [UUID]) -> Result<Void, MemoryError> {
         var errorID: UUID?
         var didDissociate = false
         var missingIDs: [UUID] = []
+        var affectedIDs: Set<UUID> = [id]
         queue.sync {
             if store[id] != nil {
                 for relatedId in relatedIds {
                     if store[relatedId] != nil {
                         associations[id]?.remove(relatedId)
                         associations[relatedId]?.remove(id)
+                        affectedIDs.insert(relatedId)
                     } else {
                         missingIDs.append(relatedId)
                     }
                 }
-                if missingIDs.isEmpty {
+                if !affectedIDs.isEmpty {
                     invalidateReferencedCache()
-                    notifyAll(affectedIDs: Set([id] + relatedIds))
+                    notifyAll(affectedIDs: affectedIDs)
+                }
+                if missingIDs.isEmpty {
                     didDissociate = true
                 }
             } else {
@@ -537,13 +682,10 @@ public final class InMemoryMemoryGraph: MemoryGraph, @unchecked Sendable {
         }
         if !missingIDs.isEmpty {
             let idsList = missingIDs.map { $0.uuidString }.joined(separator: ", ")
-            return .failure(
-                .associationFailed(
-                    "Dissociation failed because memory(\(idsList)) did not exist."
-                ))
+            return .failure(.associationFailed("Memory not found: \(idsList)"))
         }
         if didDissociate { recordHistory(type: .dissociate, affectedIds: [id] + relatedIds) }
-        return didDissociate ? .success(()) : .failure(.memoryNotFound(errorID!))
+        return didDissociate ? .success(()) : .failure(.memoryNotFound(errorID ?? id))
     }
 
     public func forget(_ ids: [UUID]) -> Result<Void, MemoryError> {
@@ -561,7 +703,6 @@ public final class InMemoryMemoryGraph: MemoryGraph, @unchecked Sendable {
                     missingIDs.append(id)
                 }
             }
-            // Remove deleted IDs from all other memories' associations
             for key in Array(associations.keys) {
                 if var set = associations[key] {
                     let oldCount = set.count
@@ -613,11 +754,16 @@ public final class InMemoryMemoryGraph: MemoryGraph, @unchecked Sendable {
 
             var idMapping: [UUID: UUID] = [:]
             queue.sync {
-                // Map old IDs — reuse existing nodes or create new ones
                 let existingIDs = Set(store.keys)
+                let isFirstImport = existingIDs.isEmpty
                 for record in records {
                     if existingIDs.contains(record.id) {
                         idMapping[record.id] = record.id
+                    } else if isFirstImport {
+                        idMapping[record.id] = record.id
+                        store[record.id] = StoredNode(
+                            id: record.id, label: record.label, content: record.content,
+                            createdAt: record.createdAt ?? Date.now)
                     } else {
                         let newID = UUID()
                         idMapping[record.id] = newID
@@ -629,7 +775,6 @@ public final class InMemoryMemoryGraph: MemoryGraph, @unchecked Sendable {
 
                 let importedIDs = Set(idMapping.values)
 
-                // Restore bidirectional associations using remapped IDs
                 var affectedIDs: Set<UUID> = []
                 for record in records {
                     guard let newID = idMapping[record.id] else { continue }

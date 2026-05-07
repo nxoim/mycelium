@@ -47,11 +47,23 @@ struct MemorizeCommand: ParsableCommand {
     var with: [String] = []
 
     func run() throws {
+        let trimmedLabel = label.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedLabel.isEmpty else {
+            if label.isEmpty {
+                fputs("Error: Label must not be empty. An empty label is not allowed.\n", stderr)
+            } else {
+                fputs(
+                    "Error: Label contains only whitespace. Whitespace-only labels are not allowed.\n",
+                    stderr
+                )
+            }
+            Darwin.exit(1)
+        }
         let config = MyceliumConfig(dbPath: db.isEmpty ? nil : db, ramOnly: ramOnly)
         let graph = try makeGraph(config: config)
         let memory = Memory(
             id: UUID(),
-            label: label,
+            label: trimmedLabel,
             content: content,
             associations: with.compactMap { UUID(uuidString: $0) }
         )
@@ -82,8 +94,13 @@ struct RecallCommand: AsyncParsableCommand {
     @Option(help: "Path to the SQLite database directory (default: executable directory)")
     var db: String = ""
 
-    @Option(help: "Depth of association recursion (default: 0)")
-    var depth: Int = 0
+    @Option(
+        name: .customLong("depth"),
+        parsing: .unconditional,
+        help:
+            "Depth of association recursion (default: 0). Use -1 or 'no-associations' to load nodes without their associations."
+    )
+    var depthString: String = "0"
 
     @Option(help: "Sort order: chronological, reverseChronological (default: chronological)")
     var sort: String = "chronological"
@@ -98,24 +115,17 @@ struct RecallCommand: AsyncParsableCommand {
             print("Error: Invalid sort order '\(sort)'")
             Darwin.exit(1)
         }
+        let depth = QueryParser.parseDepth(depthString)
         let config = MyceliumConfig(dbPath: db.isEmpty ? nil : db, ramOnly: ramOnly)
         let graph = try makeGraph(config: config)
-        if let result = await graph.recall(ids: uuids, depth: depth, sortOrder: sortOrder)
-            .firstElement()
+        switch await graph.buildSummaryNode(ids: uuids, depth: depth, sortOrder: sortOrder)
+            .firstResult()
         {
-            switch result {
-            case .success(let memories):
-                for memory in memories {
-                    if let m = memory {
-                        print(MemoryMarkdown.formatSummary(m))
-                    } else {
-                        print("null")
-                    }
-                }
-            case .failure(let error):
-                print("Error: \(error.localizedDescription)")
-                Darwin.exit(1)
-            }
+        case .success(let nodes):
+            print(MemoryMarkdown.formatSummaryNodesTree(nodes))
+        case .failure(let error):
+            print("Error: \(error.localizedDescription)")
+            Darwin.exit(1)
         }
     }
 }
@@ -143,22 +153,18 @@ struct RecallContentCommand: AsyncParsableCommand {
         }
         let config = MyceliumConfig(dbPath: db.isEmpty ? nil : db, ramOnly: ramOnly)
         let graph = try makeGraph(config: config)
-        if let result = await graph.recallFully(ids: uuids, sortOrder: .chronological)
-            .firstElement()
-        {
-            switch result {
-            case .success(let contents):
-                for content in contents {
-                    if let c = content {
-                        print(c)
-                    } else {
-                        print("null")
-                    }
+        switch await graph.recallFully(ids: uuids, sortOrder: .chronological).firstResult() {
+        case .success(let contents):
+            for content in contents {
+                if let c = content {
+                    print(c)
+                } else {
+                    print("null")
                 }
-            case .failure(let error):
-                print("Error: \(error.localizedDescription)")
-                Darwin.exit(1)
             }
+        case .failure(let error):
+            print("Error: \(error.localizedDescription)")
+            Darwin.exit(1)
         }
     }
 }
@@ -190,23 +196,39 @@ struct SearchCommand: AsyncParsableCommand {
     @Option(help: "Path to the SQLite database directory (default: executable directory)")
     var db: String = ""
 
+    @Option(
+        name: .customLong("depth"),
+        parsing: .unconditional,
+        help:
+            "Depth of association recursion (default: 0). Use -1 or 'no-associations' to load nodes without their associations."
+    )
+    var depthString: String = "0"
+
     func run() async throws {
         let range = QueryParser.parseRange(range) ?? (0..<50)
         guard let sortOrder = QueryParser.parseSortOrderStrict(sort) else {
             throw ValidationError("invalid --sort '\(sort)'")
         }
+        let depth = QueryParser.parseDepth(depthString)
         let config = MyceliumConfig(dbPath: db.isEmpty ? nil : db, ramOnly: ramOnly)
         let graph = try makeGraph(config: config)
-        if let result = await graph.search(keywords: keywords, in: range, sortOrder: sortOrder)
-            .firstElement()
+        switch await graph.search(
+            keywords: keywords, in: range, depth: 0, sortOrder: .chronological
+        )
+        .firstResult()
         {
-            switch result {
-            case .success(let nodes):
-                let labelMap = nodes.reduce(into: [:]) { $0[$1.id] = $1.label }
-                print(MemoryMarkdown.formatSummariesWithCount(nodes, labelMap: labelMap))
+        case .success(let nodes):
+            let ids = nodes.map { $0.id }
+            switch await graph.buildSummaryNode(ids: ids, depth: depth, sortOrder: sortOrder)
+                .firstResult()
+            {
+            case .success(let summaryNodes):
+                print(MemoryMarkdown.formatSummaryNodesWithCount(summaryNodes))
             case .failure(let error):
                 print("Error: \(error.localizedDescription)")
             }
+        case .failure(let error):
+            print("Error: \(error.localizedDescription)")
         }
     }
 }
@@ -235,21 +257,35 @@ struct AllMemoriesCommand: AsyncParsableCommand {
     @Option(help: "Path to the SQLite database directory (default: executable directory)")
     var db: String = ""
 
+    @Option(
+        name: .customLong("depth"),
+        parsing: .unconditional,
+        help:
+            "Depth of association recursion (default: 0). Use -1 or 'no-associations' to load nodes without their associations."
+    )
+    var depthString: String = "0"
+
     func run() async throws {
         let range = QueryParser.parseRange(range) ?? (0..<50)
         guard let sortOrder = QueryParser.parseSortOrderStrict(sort) else {
             throw ValidationError("invalid --sort '\(sort)'")
         }
+        let depth = QueryParser.parseDepth(depthString)
         let config = MyceliumConfig(dbPath: db.isEmpty ? nil : db, ramOnly: ramOnly)
         let graph = try makeGraph(config: config)
-        if let result = await graph.allMemories(in: range, sortOrder: sortOrder).firstElement() {
-            switch result {
-            case .success(let nodes):
-                let labelMap = nodes.reduce(into: [:]) { $0[$1.id] = $1.label }
-                print(MemoryMarkdown.formatSummariesWithCount(nodes, labelMap: labelMap))
+        switch await graph.allMemories(in: range, depth: 0, sortOrder: sortOrder).firstResult() {
+        case .success(let nodes):
+            let ids = nodes.map { $0.id }
+            switch await graph.buildSummaryNode(ids: ids, depth: depth, sortOrder: sortOrder)
+                .firstResult()
+            {
+            case .success(let summaryNodes):
+                print(MemoryMarkdown.formatSummaryNodesWithCount(summaryNodes))
             case .failure(let error):
                 print("Error: \(error.localizedDescription)")
             }
+        case .failure(let error):
+            print("Error: \(error.localizedDescription)")
         }
     }
 }
@@ -278,21 +314,35 @@ struct AdriftCommand: AsyncParsableCommand {
     @Option(help: "Path to the SQLite database directory (default: executable directory)")
     var db: String = ""
 
+    @Option(
+        name: .customLong("depth"),
+        parsing: .unconditional,
+        help:
+            "Depth of association recursion (default: 0). Use -1 or 'no-associations' to load nodes without their associations."
+    )
+    var depthString: String = "0"
+
     func run() async throws {
         let range = QueryParser.parseRange(range) ?? (0..<50)
         guard let sortOrder = QueryParser.parseSortOrderStrict(sort) else {
             throw ValidationError("invalid --sort '\(sort)'")
         }
+        let depth = QueryParser.parseDepth(depthString)
         let config = MyceliumConfig(dbPath: db.isEmpty ? nil : db, ramOnly: ramOnly)
         let graph = try makeGraph(config: config)
-        if let result = await graph.adrift(in: range, sortOrder: sortOrder).firstElement() {
-            switch result {
-            case .success(let nodes):
-                let labelMap = nodes.reduce(into: [:]) { $0[$1.id] = $1.label }
-                print(MemoryMarkdown.formatSummariesWithCount(nodes, labelMap: labelMap))
+        switch await graph.adrift(in: range, depth: 0, sortOrder: sortOrder).firstResult() {
+        case .success(let nodes):
+            let ids = nodes.map { $0.id }
+            switch await graph.buildSummaryNode(ids: ids, depth: depth, sortOrder: sortOrder)
+                .firstResult()
+            {
+            case .success(let summaryNodes):
+                print(MemoryMarkdown.formatSummaryNodesWithCount(summaryNodes))
             case .failure(let error):
                 print("Error: \(error.localizedDescription)")
             }
+        case .failure(let error):
+            print("Error: \(error.localizedDescription)")
         }
     }
 }
@@ -390,13 +440,23 @@ struct ForgetCommand: ParsableCommand {
         let graph = try makeGraph(config: config)
         if let id = id {
             guard let uuid = UUID(uuidString: id) else { throw ValidationError("invalid UUID") }
-            _ = graph.forget([uuid])
+            switch graph.forget([uuid]) {
+            case .success:
+                print("Memory \(uuid) forgotten.")
+            case .failure(let error):
+                throw ValidationError("Failed to forget memory: \(error.localizedDescription)")
+            }
         } else if !ids.isEmpty {
             let uuids = ids.compactMap { UUID(uuidString: $0) }
             guard uuids.count == ids.count else {
                 throw ValidationError("invalid UUID in --ids")
             }
-            _ = graph.forget(uuids)
+            switch graph.forget(uuids) {
+            case .success:
+                print("\(uuids.count) memory(s) forgotten.")
+            case .failure(let error):
+                throw ValidationError("Failed to forget memories: \(error.localizedDescription)")
+            }
         } else {
             throw ValidationError("provide an <id> or --ids")
         }
@@ -442,6 +502,10 @@ struct ImportMemoryCommand: ParsableCommand {
                     print("OK (no memories imported — file may be empty or invalid)")
                 } else {
                     print("OK (imported \(mapping.count) memories)")
+                    print("Remapped IDs:")
+                    for (oldId, newId) in mapping {
+                        print("\(oldId.uuidString) → \(newId.uuidString)")
+                    }
                 }
             case .failure(let error):
                 print("Error: \(error.localizedDescription)")
@@ -453,6 +517,10 @@ struct ImportMemoryCommand: ParsableCommand {
                     print("OK (no memories imported — JSON may be empty or invalid)")
                 } else {
                     print("OK (imported \(mapping.count) memories)")
+                    print("Remapped IDs:")
+                    for (oldId, newId) in mapping {
+                        print("\(oldId.uuidString) → \(newId.uuidString)")
+                    }
                 }
             case .failure(let error):
                 print("Error: \(error.localizedDescription)")

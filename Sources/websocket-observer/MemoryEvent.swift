@@ -40,7 +40,18 @@ enum MemoryEvent: Sendable {
             let wrapper = EncodedGraphState(nodes: nodes, associations: encodedAssocs)
             return String(data: (try? encoder.encode(wrapper)) ?? Data(), encoding: .utf8) ?? ""
         case .commandResult(let payload):
-            return "{\"event\":\"commandResult\",\"payload\":\(payload.json)}"
+            guard
+                let jsonObject = try? JSONSerialization.jsonObject(
+                    with: Data(payload.json.utf8), options: []
+                )
+            else {
+                return "{\"event\":\"commandResult\",\"payload\":null}"
+            }
+            let outer = ["event": "commandResult", "payload": jsonObject]
+            guard let data = try? JSONSerialization.data(withJSONObject: outer) else {
+                return ""
+            }
+            return String(data: data, encoding: .utf8) ?? ""
         case .commandError(let message):
             let wrapper = EncodedCommandError(message: message)
             return String(data: (try? encoder.encode(wrapper)) ?? Data(), encoding: .utf8) ?? ""

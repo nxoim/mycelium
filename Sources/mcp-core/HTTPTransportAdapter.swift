@@ -3,10 +3,7 @@ import HTTPTypes
 import Hummingbird
 import MCP
 
-/// Adapter that converts between Hummingbird HTTP types and MCP HTTP types.
-/// Isolates the fragile type mapping logic in one place, separate from server setup.
 public actor HTTPTransportAdapter {
-
 
     /// Convert a Hummingbird `Request` to an MCP `HTTPRequest`.
     public static func toMCPRequest(_ request: Request, path: String) async throws
@@ -31,7 +28,6 @@ public actor HTTPTransportAdapter {
             path: path
         )
     }
-
 
     /// Convert an MCP `HTTPResponse` to a Hummingbird `Response`.
     public static func toHBResponse(_ response: MCP.HTTPResponse) -> Response {
@@ -62,7 +58,6 @@ public actor HTTPTransportAdapter {
         return Response(status: status, headers: hbHeaders)
     }
 
-
     /// Build a standard MCP initialize response as a Hummingbird `Response`.
     public static func makeInitializeResponse(forID requestID: Any?) -> Response {
         let serverInfo: [String: Any] = [
@@ -89,24 +84,23 @@ public actor HTTPTransportAdapter {
         guard let data = try? JSONSerialization.data(withJSONObject: response) else {
             return Response(
                 status: .internalServerError,
-                headers: makeJSONHeaders(),
+                headers: HTTPTransportAdapter.jsonHeaders,
                 body: .init(byteBuffer: ByteBuffer(string: "Failed to encode initialize response"))
             )
         }
 
         return Response(
             status: .ok,
-            headers: makeJSONHeaders(),
+            headers: HTTPTransportAdapter.jsonHeaders,
             body: .init(byteBuffer: ByteBuffer(data: data))
         )
     }
 
-
-    private static func makeJSONHeaders() -> HTTPFields {
+    public static let jsonHeaders: HTTPFields = {
         var headers = HTTPFields()
         if let name = HTTPField.Name("content-type") {
             headers.append(HTTPField(name: name, value: "application/json"))
         }
         return headers
-    }
+    }()
 }

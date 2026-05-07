@@ -59,11 +59,11 @@ actor WebSocketManager {
     }
 
     private func sendToConnection(_ connection: Connection, payload: String) {
-        Task {
+        Task { [weak self] in
             do {
                 try await connection.outbound.write(.text(payload))
             } catch {
-                await self.unregister(connection.id)
+                await self?.unregister(connection.id)
             }
         }
     }

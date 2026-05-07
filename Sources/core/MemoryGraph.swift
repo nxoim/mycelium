@@ -34,14 +34,21 @@ public struct MemorySummary: Sendable, Codable {
 }
 
 /// Nested memory summary for recall with depth — associations are recursive MemorySummaryNodes.
+///
+/// The `depth` field tracks the node's position in the association tree (root = 0, children = 1, etc.).
+/// It is primarily used for JSON serialization / API output where the depth is meaningful.
+/// The `formatNodeTree` function uses its `indent` parameter for tree rendering instead, because
+/// tree indentation is computed dynamically during formatting rather than stored in the model.
 public struct MemorySummaryNode: Sendable, Codable {
     public let id: UUID
     public let label: String
+    public let depth: Int
     public let associations: [MemorySummaryNode]
 
-    public init(id: UUID, label: String, associations: [MemorySummaryNode] = []) {
+    public init(id: UUID, label: String, depth: Int = 0, associations: [MemorySummaryNode] = []) {
         self.id = id
         self.label = label
+        self.depth = depth
         self.associations = associations
     }
 }
@@ -58,19 +65,22 @@ public enum MemoryError: Sendable, Error, LocalizedError {
     case importFailed(String)
     case exportFailed(String)
     case storageFailed(String)
+    case invalidInput(String)
 
     public var errorDescription: String? {
         switch self {
         case .memoryNotFound(let id):
-            return "Memory not found: \(id.uuidString)"
+            "Memory not found: \(id.uuidString)"
         case .associationFailed(let reason):
-            return reason
+            reason
         case .importFailed(let reason):
-            return "Import failed: \(reason)"
+            "Import failed: \(reason)"
         case .exportFailed(let reason):
-            return "Export failed: \(reason)"
+            "Export failed: \(reason)"
         case .storageFailed(let reason):
-            return "Storage failed: \(reason)"
+            "Storage failed: \(reason)"
+        case .invalidInput(let reason):
+            "Invalid input: \(reason)"
         }
     }
 }
@@ -85,10 +95,10 @@ public enum MutationType: Sendable, Codable, CaseIterable, RawRepresentable {
 
     public var rawValue: String {
         switch self {
-        case .memorize: return "memorize"
-        case .associate: return "associate"
-        case .dissociate: return "dissociate"
-        case .forget: return "forget"
+        case .memorize: "memorize"
+        case .associate: "associate"
+        case .dissociate: "dissociate"
+        case .forget: "forget"
         }
     }
 
@@ -141,13 +151,14 @@ public protocol MemoryGraph: Sendable {
         Result<[MemorySummaryNode?], MemoryError>
     >
 
-    /// Search memories by keywords, paginated and sorted
-    func search(keywords: [String], in range: Range<Int>, sortOrder: SortOrder) -> AsyncStream<
-        Result<[Memory], MemoryError>
-    >
+    /// Search memories by keywords, paginated and sorted with optional association depth
+    func search(keywords: [String], in range: Range<Int>, depth: Int, sortOrder: SortOrder)
+        -> AsyncStream<
+            Result<[Memory], MemoryError>
+        >
 
-    /// Retrieve all memories, paginated and sorted
-    func allMemories(in range: Range<Int>, sortOrder: SortOrder) -> AsyncStream<
+    /// Retrieve all memories, paginated and sorted with optional association depth
+    func allMemories(in range: Range<Int>, depth: Int, sortOrder: SortOrder) -> AsyncStream<
         Result<[Memory], MemoryError>
     >
 
@@ -155,8 +166,8 @@ public protocol MemoryGraph: Sendable {
     func related(to id: UUID, in range: Range<Int>, depth: Int, sortOrder: SortOrder)
         -> AsyncStream<Result<[Memory], MemoryError>>
 
-    /// Find memories with no incoming associations (orphans/adrift)
-    func adrift(in range: Range<Int>, sortOrder: SortOrder) -> AsyncStream<
+    /// Find memories with no incoming associations (orphans/adrift) with optional association depth
+    func adrift(in range: Range<Int>, depth: Int, sortOrder: SortOrder) -> AsyncStream<
         Result<[Memory], MemoryError>
     >
 

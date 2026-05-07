@@ -10,42 +10,58 @@ struct ImportExportHandlers {
         self.graph = graph
     }
 
-    func handleImport(request: Request, context: some RequestContext) async throws -> Response {
-        do {
-            let body = try await request.body.collect(upTo: .max)
-            let data = Data(body.readableBytesView)
-            let jsonString = String(decoding: data, as: UTF8.self)
-            switch graph.importMemory(json: jsonString) {
-            case .success:
-                return Response(
-                    status: .ok, body: .init(byteBuffer: ByteBuffer(string: "{\"ok\":true}")))
-            case .failure(let error):
-                return Response(
-                    status: .badRequest,
-                    body: .init(
-                        byteBuffer: ByteBuffer(
-                            string: "{\"error\":\"\(error.localizedDescription)\"}")))
-            }
-        } catch {
-            return Response(
-                status: .badRequest,
-                body: .init(
-                    byteBuffer: ByteBuffer(string: "{\"error\":\"\(error.localizedDescription)\"}"))
+    private func successResponse() -> Response {
+        Response(
+            status: .ok,
+            body: .init(byteBuffer: ByteBuffer(string: "{\"ok\":true}"))
+        )
+    }
+
+    private func badRequestResponse(_ error: Error) -> Response {
+        Response(
+            status: .badRequest,
+            body: .init(
+                byteBuffer: ByteBuffer(string: "{\"error\":\"\(error.localizedDescription)\"}")
             )
+        )
+    }
+
+    private func internalErrorResponse(_ error: Error) -> Response {
+        Response(
+            status: .internalServerError,
+            body: .init(
+                byteBuffer: ByteBuffer(string: "{\"error\":\"\(error.localizedDescription)\"}")
+            )
+        )
+    }
+
+    func handleImport(request: Request, context: some RequestContext) async throws -> Response {
+        let body = try await request.body.collect(upTo: .max)
+        guard let jsonStr = String(data: Data(body.readableBytesView), encoding: .utf8),
+            !jsonStr.isEmpty
+        else {
+            throw NSError(
+                domain: "ImportError", code: 400,
+                userInfo: [NSLocalizedDescriptionKey: "Missing required field: json"])
+        }
+
+        switch graph.importMemory(json: jsonStr) {
+        case .success:
+            return successResponse()
+        case .failure(let error):
+            throw error
         }
     }
 
     func handleExport(request: Request, context: some RequestContext) async throws -> Response {
         switch graph.exportMemoryJSON() {
-        case .success(let jsonString):
+        case .success(let jsonStr):
             return Response(
-                status: .ok, body: .init(byteBuffer: ByteBuffer(string: jsonString)))
-        case .failure(let error):
-            return Response(
-                status: .internalServerError,
-                body: .init(
-                    byteBuffer: ByteBuffer(string: "{\"error\":\"\(error.localizedDescription)\"}"))
+                status: .ok,
+                body: .init(byteBuffer: ByteBuffer(string: jsonStr))
             )
+        case .failure(let error):
+            throw error
         }
     }
 }

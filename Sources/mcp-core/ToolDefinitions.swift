@@ -36,7 +36,7 @@ public let mcpTools: [Tool] = [
                 "keywords": .object([
                     "type": .string("array"),
                     "description": .string(
-                        ""),
+                        "Keywords to search for in memory labels and content"),
                 ]),
                 "range": .object([
                     "type": .string("string"),
@@ -44,17 +44,33 @@ public let mcpTools: [Tool] = [
                         "Pagination range as 'start:end', e.g. 0:50"
                     ),
                 ]),
-                "sort": .object(["type": .string("string"), "description": .string("")]),
+                "depth": .object([
+                    "type": .string("integer"),
+                    "description": .string(
+                        """
+                        -1 = no associations loaded
+                        0 = direct associations only
+                        1+ = recursive association expansion
+                        """),
+                ]),
+                "sort": .object([
+                    "type": .string("string"),
+                    "description": .string(
+                        "Sort order: 'chronological', 'reverseChronological', or 'relevance'"),
+                ]),
             ]), "required": .array(["keywords"]),
         ]),
         annotations: Tool.Annotations(readOnlyHint: true)),
     .init(
         name: "recall",
-        description: "Remember something by id",
+        description: "Remember something with its associations by id",
         inputSchema: .object([
             "type": .string("object"),
             "properties": .object([
-                "ids": .object(["type": .string("array"), "description": .string("")]),
+                "ids": .object([
+                    "type": .string("array"),
+                    "description": .string("Array of memory IDs to recall"),
+                ]),
                 "depth": .object([
                     "type": .string("integer"),
                     "description": .string(
@@ -76,13 +92,16 @@ public let mcpTools: [Tool] = [
         inputSchema: .object([
             "type": .string("object"),
             "properties": .object([
-                "ids": .object(["type": .string("array"), "description": .string("")])
+                "ids": .object([
+                    "type": .string("array"),
+                    "description": .string("Array of memory IDs to recall fully"),
+                ])
             ]), "required": .array(["ids"]),
         ])),
     .init(
         name: "allMemories",
         description:
-            "Remember everything",
+            "Remember everything with associations",
         inputSchema: .object([
             "type": .string("object"),
             "properties": .object([
@@ -91,6 +110,15 @@ public let mcpTools: [Tool] = [
                     "description": .string(
                         "Pagination range as 'start:end', e.g. 0:50"
                     ),
+                ]),
+                "depth": .object([
+                    "type": .string("integer"),
+                    "description": .string(
+                        """
+                        -1 = no associations loaded
+                        0 = direct associations only
+                        1+ = recursive association expansion
+                        """),
                 ]),
                 "sortOrder": .object([
                     "type": .string("string"),
@@ -111,6 +139,15 @@ public let mcpTools: [Tool] = [
                     "description": .string(
                         "Pagination range as 'start:end', e.g. 0:50"
                     ),
+                ]),
+                "depth": .object([
+                    "type": .string("integer"),
+                    "description": .string(
+                        """
+                        -1 = no associations loaded
+                        0 = direct associations only
+                        1+ = recursive association expansion
+                        """),
                 ]),
                 "sort": .object([
                     "type": .string("string"),
@@ -160,7 +197,10 @@ public let mcpTools: [Tool] = [
         inputSchema: .object([
             "type": .string("object"),
             "properties": .object([
-                "ids": .object(["type": .string("array"), "description": .string("")])
+                "ids": .object([
+                    "type": .string("array"),
+                    "description": .string("Array of memory IDs to forget"),
+                ])
             ]), "required": .array(["ids"]),
         ])),
 ]

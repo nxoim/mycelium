@@ -21,6 +21,40 @@ private struct PersistedNode: Codable {
     let content: String
     let associationIDs: [UUID]
     let createdAt: Date?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case label
+        case content
+        case associationIDs
+        case createdAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        label = try container.decode(String.self, forKey: .label)
+        content = try container.decode(String.self, forKey: .content)
+        associationIDs = try container.decodeIfPresent([UUID].self, forKey: .associationIDs) ?? []
+        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(label, forKey: .label)
+        try container.encode(content, forKey: .content)
+        try container.encode(associationIDs, forKey: .associationIDs)
+        try container.encodeIfPresent(createdAt, forKey: .createdAt)
+    }
+
+    init(id: UUID, label: String, content: String, associationIDs: [UUID], createdAt: Date?) {
+        self.id = id
+        self.label = label
+        self.content = content
+        self.associationIDs = associationIDs
+        self.createdAt = createdAt
+    }
 }
 
 @available(macOS 12.0, *)
@@ -32,28 +66,7 @@ public final class LocalMemoryGraph: MemoryGraph, Sendable {
     public init(database: DatabaseQueue) throws {
         self.databaseURL = nil
         self.databaseQueue = database
-        try databaseQueue.write { database in
-            try database.create(table: NodeRecord.databaseTableName, ifNotExists: true) { t in
-                t.column("id", .text).primaryKey()
-                t.column("label", .text).notNull()
-                t.column("content", .text).notNull()
-                t.column("createdAt", .text).notNull()
-            }
-            try database.create(table: AssociationRecord.databaseTableName, ifNotExists: true) {
-                t in
-                t.column("parentId", .text).notNull().references(
-                    NodeRecord.databaseTableName, onDelete: .cascade)
-                t.column("childId", .text).notNull().references(
-                    NodeRecord.databaseTableName, onDelete: .cascade)
-                t.primaryKey(["parentId", "childId"])
-            }
-            try database.create(table: "history", ifNotExists: true) { t in
-                t.column("id", .text).primaryKey()
-                t.column("timestamp", .text).notNull()
-                t.column("type", .text).notNull()
-                t.column("affectedIds", .text).notNull()
-            }
-        }
+        try setupDatabase(databaseQueue)
     }
 
     public init(directory: URL? = nil) throws {
@@ -67,10 +80,16 @@ public final class LocalMemoryGraph: MemoryGraph, Sendable {
             try fm.createDirectory(at: dir, withIntermediateDirectories: true)
         }
 
-        databaseURL = dir.appendingPathComponent("mycelium.sqlite")
-        databaseQueue = try DatabaseQueue(path: databaseURL!.path)
+        databaseURL = dir.appendingPathComponent(DatabaseConfig.defaultFileName)
+        guard let dbPath = databaseURL?.path else {
+            fatalError("Failed to create database URL")
+        }
+        databaseQueue = try DatabaseQueue(path: dbPath)
+        try setupDatabase(databaseQueue)
+    }
 
-        try databaseQueue.write { database in
+    private func setupDatabase(_ queue: DatabaseQueue) throws {
+        try queue.write { database in
             try database.create(table: NodeRecord.databaseTableName, ifNotExists: true) { t in
                 t.column("id", .text).primaryKey()
                 t.column("label", .text).notNull()
@@ -94,24 +113,18 @@ public final class LocalMemoryGraph: MemoryGraph, Sendable {
         }
     }
 
-    private func buildNode(database: Database, id: UUID, depth: Int) throws -> Memory? {
+    private func buildNode(
+        database: Database, id: UUID, depth: Int, path: Set<UUID>
+    ) throws -> Memory? {
         guard let record = try NodeRecord.fetchOne(database, key: id) else {
             return nil
         }
 
+        let nodePath = path.union([record.id])
+
         if depth < 0 {
             return Memory(
                 id: record.id, label: record.label, content: record.content, associations: [])
-        }
-
-        if depth == 0 {
-            let childIds =
-                try AssociationRecord
-                .filter(Column("parentId") == id)
-                .fetchAll(database)
-                .map { $0.childId }
-            return Memory(
-                id: record.id, label: record.label, content: record.content, associations: childIds)
         }
 
         let childIds =
@@ -121,15 +134,16 @@ public final class LocalMemoryGraph: MemoryGraph, Sendable {
             .map { $0.childId }
 
         let children = try childIds.compactMap { childId -> Memory? in
-            if depth > 0 {
-                return try buildNode(database: database, id: childId, depth: depth - 1)
-            } else {
-                guard let childRecord = try NodeRecord.fetchOne(database, key: childId) else {
-                    return nil
-                }
+            if nodePath.contains(childId) { return nil }
+            guard let childRecord = try NodeRecord.fetchOne(database, key: childId) else {
+                return nil
+            }
+            if depth == 0 {
                 return Memory(
                     id: childRecord.id, label: childRecord.label, content: "", associations: [])
             }
+            return try buildNode(
+                database: database, id: childId, depth: depth - 1, path: nodePath)
         }
 
         return Memory(
@@ -157,7 +171,6 @@ public final class LocalMemoryGraph: MemoryGraph, Sendable {
     }
 
     private func paginate<T>(_ array: [T], range: Range<Int>) -> [T] {
-        // If specified range exceeds total amount of items to paginate, load all items
         if range.lowerBound >= array.count {
             return array
         }
@@ -168,7 +181,6 @@ public final class LocalMemoryGraph: MemoryGraph, Sendable {
     public func memorize(_ memories: [Memory]) -> Result<[UUID], MemoryError> {
         do {
             try databaseQueue.write { database in
-                // Use a single transaction with individual inserts
                 for memory in memories {
                     let node = NodeRecord(
                         id: memory.id, label: memory.label, content: memory.content,
@@ -176,7 +188,6 @@ public final class LocalMemoryGraph: MemoryGraph, Sendable {
                     try node.insert(database, onConflict: .ignore)
                 }
 
-                // Batch associations using SQL INSERT OR IGNORE
                 for memory in memories {
                     for relatedId in memory.associations {
                         guard (try NodeRecord.fetchOne(database, key: relatedId)) != nil else {
@@ -189,7 +200,6 @@ public final class LocalMemoryGraph: MemoryGraph, Sendable {
                     }
                 }
 
-                // Omni-directional associations: link all declared targets to each other
                 for memory in memories {
                     let validRelatedIds = memory.associations.filter { relatedId in
                         (try? NodeRecord.fetchOne(database, key: relatedId)) != nil
@@ -218,57 +228,58 @@ public final class LocalMemoryGraph: MemoryGraph, Sendable {
     > {
         return AsyncStream { continuation in
             do {
-                var results: [Memory?] = Array(repeating: nil, count: ids.count)
+                var allMemories: [Memory?] = []
+
                 try databaseQueue.read { database in
-                    for (index, id) in ids.enumerated() {
-                        guard let record = try NodeRecord.fetchOne(database, key: id) else {
+                    for id in ids {
+                        guard try NodeRecord.fetchOne(database, key: id) != nil else {
+                            allMemories.append(nil)
                             continue
                         }
-
-                        if depth == 0 {
-                            let childIds =
-                                try AssociationRecord
-                                .filter(Column("parentId") == id)
-                                .fetchAll(database)
-                                .map { $0.childId }
-                            results[index] = Memory(
-                                id: record.id, label: record.label, content: record.content,
-                                associations: childIds)
-                        } else {
-                            let childIds =
-                                try AssociationRecord
-                                .filter(Column("parentId") == id)
-                                .fetchAll(database)
-                                .map { $0.childId }
-
-                            var children: [Memory] = []
-                            for childId in childIds {
-                                if depth > 1 {
-                                    if let child = try buildNode(
-                                        database: database, id: childId, depth: depth - 1)
-                                    {
-                                        children.append(child)
-                                    }
-                                } else {
-                                    guard
-                                        let childRecord = try NodeRecord.fetchOne(
-                                            database, key: childId)
-                                    else { continue }
-                                    children.append(
-                                        Memory(
-                                            id: childRecord.id, label: childRecord.label,
-                                            content: "", associations: []))
-                                }
-                            }
-                            results[index] = Memory(
-                                id: record.id, label: record.label, content: record.content,
-                                associations: children.map { $0.id })
-                        }
+                        var visited: Set<UUID> = [id]
+                        try expandNodeToFlatArray(
+                            database: database, id: id, depth: depth,
+                            into: &allMemories, path: [id],
+                            visited: &visited)
                     }
                 }
-                continuation.yield(.success(results))
+                continuation.yield(.success(allMemories))
             } catch {
                 continuation.yield(.failure(.storageFailed(error.localizedDescription)))
+            }
+        }
+    }
+
+    private func expandNodeToFlatArray(
+        database: Database, id: UUID, depth: Int, into memories: inout [Memory?],
+        path: Set<UUID>, visited: inout Set<UUID>
+    ) throws {
+        guard let record = try NodeRecord.fetchOne(database, key: id) else { return }
+
+        let nodePath = path.union([record.id])
+
+        let assocIds: [UUID] =
+            try AssociationRecord
+            .filter(Column("parentId") == id)
+            .fetchAll(database)
+            .map { $0.childId }
+
+        let mem = Memory(
+            id: record.id, label: record.label, content: record.content,
+            associations: assocIds)
+        memories.append(mem)
+        visited.insert(id)
+
+        if depth > 0 {
+            for childId in assocIds {
+                if nodePath.contains(childId) { continue }
+                if visited.contains(childId) { continue }
+                if try NodeRecord.fetchOne(database, key: childId) != nil {
+                    try expandNodeToFlatArray(
+                        database: database, id: childId, depth: depth - 1,
+                        into: &memories, path: nodePath,
+                        visited: &visited)
+                }
             }
         }
     }
@@ -278,17 +289,26 @@ public final class LocalMemoryGraph: MemoryGraph, Sendable {
     > {
         return AsyncStream { continuation in
             do {
-                var results: [MemorySummaryNode?] = Array(repeating: nil, count: ids.count)
+                var snapshot: [(UUID, String)] = []
                 try databaseQueue.read { database in
-                    for (index, id) in ids.enumerated() {
-                        guard let record = try NodeRecord.fetchOne(database, key: id) else {
-                            return
+                    for id in ids {
+                        if let record = try NodeRecord.fetchOne(database, key: id) {
+                            snapshot.append((record.id, record.label))
                         }
-                        let children = try buildSummaryChildren(
-                            database: database, id: id, depth: depth)
-                        results[index] = MemorySummaryNode(
-                            id: record.id, label: record.label, associations: children)
                     }
+                }
+
+                var results: [MemorySummaryNode?] = Array(repeating: nil, count: ids.count)
+                for (index, id) in ids.enumerated() {
+                    guard let (uuid, label) = snapshot.first(where: { $0.0 == id }) else {
+                        continue
+                    }
+                    var visited: Set<UUID> = [uuid]
+                    let children = try buildSummaryChildrenSync(
+                        databaseQueue: databaseQueue, id: uuid,
+                        depth: depth, path: [], visited: &visited)
+                    results[index] = MemorySummaryNode(
+                        id: uuid, label: label, depth: 0, associations: children)
                 }
                 continuation.yield(.success(results))
             } catch {
@@ -297,20 +317,120 @@ public final class LocalMemoryGraph: MemoryGraph, Sendable {
         }
     }
 
-    private func buildSummaryChildren(database: Database, id: UUID, depth: Int) throws
-        -> [MemorySummaryNode]
-    {
-        let childIds =
+    private func buildSummaryChildrenSync(
+        databaseQueue: DatabaseQueue, id: UUID, depth: Int, path: Set<UUID>,
+        visited: inout Set<UUID>
+    ) throws -> [MemorySummaryNode] {
+        let childIds = try databaseQueue.read { db in
             try AssociationRecord
-            .filter(Column("parentId") == id)
-            .fetchAll(database)
-            .map { $0.childId }
-        return try childIds.compactMap { childId -> MemorySummaryNode? in
-            guard let record = try NodeRecord.fetchOne(database, key: childId) else { return nil }
-            let children =
-                depth > 0
-                ? try buildSummaryChildren(database: database, id: childId, depth: depth - 1) : []
-            return MemorySummaryNode(id: record.id, label: record.label, associations: children)
+                .filter(Column("parentId") == id)
+                .fetchAll(db)
+                .map { $0.childId }
+        }
+        let nodePath = path.union([id])
+
+        var children: [MemorySummaryNode] = []
+        for childId in childIds {
+            if visited.contains(childId) { continue }
+            if let childNode = try buildSummaryChildSync(
+                databaseQueue: databaseQueue, id: childId, depth: depth + 1,
+                path: nodePath, visited: &visited
+            ) {
+                children.append(childNode)
+            }
+        }
+        return children
+    }
+
+    private func buildSummaryChildSync(
+        databaseQueue: DatabaseQueue, id: UUID, depth: Int, path: Set<UUID>,
+        visited: inout Set<UUID>
+    ) throws -> MemorySummaryNode? {
+        guard let record = try databaseQueue.read({ try NodeRecord.fetchOne($0, key: id) }) else {
+            return nil
+        }
+        if path.contains(id) { return nil }
+        if visited.contains(id) { return nil }
+        visited.insert(id)
+
+        let childIds = try databaseQueue.read { db in
+            try AssociationRecord
+                .filter(Column("parentId") == id)
+                .fetchAll(db)
+                .map { $0.childId }
+        }
+
+        if depth <= 0 || childIds.isEmpty {
+            return MemorySummaryNode(
+                id: record.id, label: record.label, depth: depth, associations: [])
+        }
+
+        var childAssociations: [MemorySummaryNode] = []
+        let childPath = path.union([id])
+        for childId in childIds {
+            if let childNode = try buildSummaryChildSync(
+                databaseQueue: databaseQueue, id: childId, depth: depth - 1,
+                path: childPath, visited: &visited
+            ) {
+                childAssociations.append(childNode)
+            }
+        }
+        return MemorySummaryNode(
+            id: record.id, label: record.label, depth: depth, associations: childAssociations)
+    }
+
+    private func buildSummaryChildren(
+        databaseQueue: DatabaseQueue, id: UUID, depth: Int, path: Set<UUID>,
+        visited: inout Set<UUID>
+    )
+        async throws -> [MemorySummaryNode]
+    {
+        let childIds = try await databaseQueue.read { db in
+            try AssociationRecord
+                .filter(Column("parentId") == id)
+                .fetchAll(db)
+                .map { $0.childId }
+        }
+
+        let nodePath = path.union([id])
+
+        let dbPath = databaseURL?.path ?? ""
+
+        // Local copy of visited to avoid inout capture by escaping closure
+        let taskVisited = visited
+        return await withTaskGroup(
+            of: MemorySummaryNode?.self, returning: [MemorySummaryNode].self
+        ) { group in
+            for childId in childIds {
+                group.addTask { [dbPath, taskVisited] in
+                    do {
+                        let dbQueue = try DatabaseQueue(path: dbPath)
+                        let record = try await dbQueue.read { db in
+                            try NodeRecord.fetchOne(db, key: childId)
+                        }
+                        guard let record = record else { return nil }
+                        if nodePath.contains(childId) { return nil }
+                        var childVisited = taskVisited
+                        let children: [MemorySummaryNode] =
+                            depth > 0
+                            ? (try? await self.buildSummaryChildren(
+                                databaseQueue: dbQueue, id: childId, depth: depth - 1,
+                                path: nodePath, visited: &childVisited))
+                                ?? []
+                            : []
+                        return MemorySummaryNode(
+                            id: record.id, label: record.label, associations: children)
+                    } catch {
+                        return nil
+                    }
+                }
+            }
+
+            var results: [MemorySummaryNode] = []
+            for await node in group {
+                if let node = node { results.append(node) }
+            }
+            return results
         }
     }
 
@@ -332,7 +452,7 @@ public final class LocalMemoryGraph: MemoryGraph, Sendable {
         }
     }
 
-    public func search(keywords: [String], in range: Range<Int>, sortOrder: SortOrder)
+    public func search(keywords: [String], in range: Range<Int>, depth: Int, sortOrder: SortOrder)
         -> AsyncStream<Result<[Memory], MemoryError>>
     {
         return AsyncStream { continuation in
@@ -353,7 +473,8 @@ public final class LocalMemoryGraph: MemoryGraph, Sendable {
                 } else {
                     let memories = try databaseQueue.read { database -> [Memory] in
                         try paged.compactMap {
-                            try self.buildNode(database: database, id: $0.id, depth: 0)
+                            try self.buildNode(
+                                database: database, id: $0.id, depth: depth, path: [])
                         }.compactMap { $0 }
                     }
                     continuation.yield(.success(memories))
@@ -365,7 +486,7 @@ public final class LocalMemoryGraph: MemoryGraph, Sendable {
 
     }
 
-    public func allMemories(in range: Range<Int>, sortOrder: SortOrder) -> AsyncStream<
+    public func allMemories(in range: Range<Int>, depth: Int, sortOrder: SortOrder) -> AsyncStream<
         Result<[Memory], MemoryError>
     > {
         return AsyncStream { continuation in
@@ -379,7 +500,8 @@ public final class LocalMemoryGraph: MemoryGraph, Sendable {
                 } else {
                     let memories = try databaseQueue.read { database -> [Memory] in
                         try paged.compactMap {
-                            try self.buildNode(database: database, id: $0.id, depth: 0)
+                            try self.buildNode(
+                                database: database, id: $0.id, depth: depth, path: [])
                         }.compactMap { $0 }
                     }
                     continuation.yield(.success(memories))
@@ -417,7 +539,8 @@ public final class LocalMemoryGraph: MemoryGraph, Sendable {
                             return Memory(
                                 id: record.id, label: record.label, content: "", associations: [])
                         }
-                        return try buildNode(database: database, id: childId, depth: depth)
+                        return try buildNode(
+                            database: database, id: childId, depth: depth, path: [])
                     }.compactMap { $0 }
                 }
                 continuation.yield(.success(memories))
@@ -427,7 +550,7 @@ public final class LocalMemoryGraph: MemoryGraph, Sendable {
         }
     }
 
-    public func adrift(in range: Range<Int>, sortOrder: SortOrder) -> AsyncStream<
+    public func adrift(in range: Range<Int>, depth: Int, sortOrder: SortOrder) -> AsyncStream<
         Result<[Memory], MemoryError>
     > {
         return AsyncStream { continuation in
@@ -443,7 +566,8 @@ public final class LocalMemoryGraph: MemoryGraph, Sendable {
                 } else {
                     let memories = try databaseQueue.read { database -> [Memory] in
                         try paged.compactMap {
-                            try self.buildNode(database: database, id: $0.id, depth: 0)
+                            try self.buildNode(
+                                database: database, id: $0.id, depth: depth, path: [])
                         }.compactMap { $0 }
                     }
                     continuation.yield(.success(memories))
@@ -494,15 +618,10 @@ public final class LocalMemoryGraph: MemoryGraph, Sendable {
 
                 if !missingIDs.isEmpty {
                     let idsList = missingIDs.map { $0.uuidString }.joined(separator: ", ")
-                    throw MemoryError.associationFailed(
-                        "Association failed because memory(\(idsList)) did not exist. Create a new memory with full contents indicating there is no knowledge about the memory."
-                    )
+                    throw MemoryError.associationFailed("Memory not found: \(idsList)")
                 }
                 if !selfIDs.isEmpty {
-                    let idsList = selfIDs.map { $0.uuidString }.joined(separator: ", ")
-                    throw MemoryError.associationFailed(
-                        "Association failed because memory(\(idsList)) is the same as the target. Self-association is not allowed."
-                    )
+                    throw MemoryError.associationFailed("Self-association is not allowed")
                 }
             }
             let validRelatedIds = relatedIds.filter { $0 != id }
@@ -524,7 +643,6 @@ public final class LocalMemoryGraph: MemoryGraph, Sendable {
                 }
 
                 for relatedId in relatedIds {
-                    // Remove both directions of association
                     let parentAssoc = AssociationRecord.filter(
                         Column("parentId") == id && Column("childId") == relatedId)
                     try parentAssoc.deleteAll(database)
@@ -553,7 +671,6 @@ public final class LocalMemoryGraph: MemoryGraph, Sendable {
                         foundAny = true
                     }
                 }
-                // Clean up orphaned associations
                 if !ids.isEmpty {
                     let placeholders = ids.map { _ in "?" }.joined(separator: ",")
                     try database.execute(
@@ -599,7 +716,6 @@ public final class LocalMemoryGraph: MemoryGraph, Sendable {
             }
 
             try databaseQueue.write { database in
-                // Pass 1: map old IDs — reuse existing nodes or create new ones
                 for record in records {
                     if existingIDs.contains(record.id) {
                         idMapping[record.id] = record.id
@@ -616,7 +732,6 @@ public final class LocalMemoryGraph: MemoryGraph, Sendable {
 
                 let importedIDs = Set(idMapping.values)
 
-                // Pass 2: restore associations using remapped IDs
                 for record in records {
                     guard let newID = idMapping[record.id] else { continue }
                     for relatedId in record.associationIDs {
@@ -657,7 +772,6 @@ public final class LocalMemoryGraph: MemoryGraph, Sendable {
         do {
             let persistedNodes = try databaseQueue.read { database -> [PersistedNode] in
                 let nodes = try NodeRecord.fetchAll(database)
-                // Batch fetch all associations in one query
                 let allAssocs = try AssociationRecord.fetchAll(database)
                 let assocMap = Dictionary(grouping: allAssocs, by: \.parentId)
                 return nodes.map { n in
@@ -738,7 +852,7 @@ public final class LocalMemoryGraph: MemoryGraph, Sendable {
                 )
             }
         } catch {
-            // History recording is best-effort — failures are silent
+            // Best-effort — failures are silent
         }
     }
 }
