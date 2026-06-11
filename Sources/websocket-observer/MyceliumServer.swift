@@ -1,11 +1,16 @@
 import ArgumentParser
-import Darwin
 import Foundation
 import GRDB
 import HTTPTypes
 import Hummingbird
 import HummingbirdWebSocket
 import core
+
+#if os(macOS)
+    import Darwin
+#else
+    import Glibc
+#endif
 
 @main
 struct Observer: AsyncParsableCommand {
@@ -105,6 +110,9 @@ struct Observer: AsyncParsableCommand {
 
             let router = Router(context: BasicWebSocketRequestContext.self)
 
+            router.get("health") { _, _ in
+                Response(status: .ok)
+            }
             router.on("memories", method: .get, use: memoryHandlers.handleAllMemories)
             router.on("memories/search", method: .get, use: memoryHandlers.handleSearch)
             router.on("memories/adrift", method: .get, use: memoryHandlers.handleAdrift)

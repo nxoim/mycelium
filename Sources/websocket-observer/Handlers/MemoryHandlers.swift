@@ -30,7 +30,7 @@ struct MemoryHandlers {
             switch result {
             case .success(let nodes):
                 let data = try JSONEncoder().encode(nodes)
-                return Response(status: .ok, body: .init(byteBuffer: ByteBuffer(data: data)))
+                return Response(status: .ok, body: .init(byteBuffer: ByteBuffer(bytes: data)))
             case .failure(let error):
                 return Response(
                     status: .internalServerError,
@@ -71,7 +71,7 @@ struct MemoryHandlers {
             switch result {
             case .success(let nodes):
                 let data = try JSONEncoder().encode(nodes)
-                return Response(status: .ok, body: .init(byteBuffer: ByteBuffer(data: data)))
+                return Response(status: .ok, body: .init(byteBuffer: ByteBuffer(bytes: data)))
             case .failure(let error):
                 return Response(
                     status: .internalServerError,
@@ -106,7 +106,7 @@ struct MemoryHandlers {
             switch result {
             case .success(let nodes):
                 let data = try JSONEncoder().encode(nodes)
-                return Response(status: .ok, body: .init(byteBuffer: ByteBuffer(data: data)))
+                return Response(status: .ok, body: .init(byteBuffer: ByteBuffer(bytes: data)))
             case .failure(let error):
                 return Response(
                     status: .internalServerError,
@@ -151,7 +151,7 @@ struct MemoryHandlers {
                             byteBuffer: ByteBuffer(string: "{\"error\":\"Memory not found\"}")))
                 }
                 let data = try JSONEncoder().encode(memory)
-                return Response(status: .ok, body: .init(byteBuffer: ByteBuffer(data: data)))
+                return Response(status: .ok, body: .init(byteBuffer: ByteBuffer(bytes: data)))
             case .failure(let error):
                 return Response(
                     status: .internalServerError,
@@ -195,7 +195,7 @@ struct MemoryHandlers {
                             byteBuffer: ByteBuffer(string: "{\"error\":\"Memory not found\"}")))
                 }
                 let data = try JSONEncoder().encode(content)
-                return Response(status: .ok, body: .init(byteBuffer: ByteBuffer(data: data)))
+                return Response(status: .ok, body: .init(byteBuffer: ByteBuffer(bytes: data)))
             case .failure(let error):
                 return Response(
                     status: .internalServerError,

@@ -1,7 +1,20 @@
 import ArgumentParser
-import Darwin
 import Foundation
 import core
+
+#if os(macOS)
+    import Darwin
+#endif
+
+extension Int32 {
+    static func exit(_ code: Int32) {
+        #if os(macOS)
+            Darwin.exit(code)
+        #else
+            Glibc.exit(code)
+        #endif
+    }
+}
 
 @main
 struct CLI: AsyncParsableCommand {
@@ -48,16 +61,15 @@ struct MemorizeCommand: ParsableCommand {
 
     func run() throws {
         let trimmedLabel = label.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedLabel.isEmpty else {
+        if trimmedLabel.isEmpty {
             if label.isEmpty {
-                fputs("Error: Label must not be empty. An empty label is not allowed.\n", stderr)
+                print("Error: Label must not be empty. An empty label is not allowed.")
             } else {
-                fputs(
-                    "Error: Label contains only whitespace. Whitespace-only labels are not allowed.\n",
-                    stderr
+                print(
+                    "Error: Label contains only whitespace. Whitespace-only labels are not allowed."
                 )
             }
-            Darwin.exit(1)
+            Int32.exit(1)
         }
         let config = MyceliumConfig(dbPath: db.isEmpty ? nil : db, ramOnly: ramOnly)
         let graph = try makeGraph(config: config)
@@ -74,7 +86,7 @@ struct MemorizeCommand: ParsableCommand {
             }
         case .failure(let error):
             print("Error: \(error.localizedDescription)")
-            Darwin.exit(1)
+            Int32.exit(1)
         }
     }
 }
@@ -107,25 +119,26 @@ struct RecallCommand: AsyncParsableCommand {
 
     func run() async throws {
         let uuids = ids.compactMap { UUID(uuidString: $0) }
-        guard uuids.count == ids.count else {
+        if uuids.count != ids.count {
             print("Error: Invalid UUID provided")
-            Darwin.exit(1)
+            Int32.exit(1)
         }
-        guard let sortOrder = QueryParser.parseSortOrderStrict(sort) else {
+        let sortOrder = QueryParser.parseSortOrderStrict(sort)
+        if sortOrder == nil {
             print("Error: Invalid sort order '\(sort)'")
-            Darwin.exit(1)
+            Int32.exit(1)
         }
         let depth = QueryParser.parseDepth(depthString)
         let config = MyceliumConfig(dbPath: db.isEmpty ? nil : db, ramOnly: ramOnly)
         let graph = try makeGraph(config: config)
-        switch await graph.buildSummaryNode(ids: uuids, depth: depth, sortOrder: sortOrder)
+        switch await graph.buildSummaryNode(ids: uuids, depth: depth, sortOrder: sortOrder!)
             .firstResult()
         {
         case .success(let nodes):
             print(MemoryMarkdown.formatSummaryNodesTree(nodes))
         case .failure(let error):
             print("Error: \(error.localizedDescription)")
-            Darwin.exit(1)
+            Int32.exit(1)
         }
     }
 }
@@ -147,9 +160,9 @@ struct RecallContentCommand: AsyncParsableCommand {
 
     func run() async throws {
         let uuids = ids.compactMap { UUID(uuidString: $0) }
-        guard uuids.count == ids.count else {
+        if uuids.count != ids.count {
             print("Error: Invalid UUID provided")
-            Darwin.exit(1)
+            Int32.exit(1)
         }
         let config = MyceliumConfig(dbPath: db.isEmpty ? nil : db, ramOnly: ramOnly)
         let graph = try makeGraph(config: config)
@@ -164,7 +177,7 @@ struct RecallContentCommand: AsyncParsableCommand {
             }
         case .failure(let error):
             print("Error: \(error.localizedDescription)")
-            Darwin.exit(1)
+            Int32.exit(1)
         }
     }
 }

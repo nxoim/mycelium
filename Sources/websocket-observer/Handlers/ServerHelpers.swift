@@ -1,14 +1,14 @@
 import Foundation
 import HTTPTypes
 import Hummingbird
+import Logging
 import core
-import os
 
 struct ServerHelpers {
-    static let logger = Logger(subsystem: "com.mycelium.server", category: "MyceliumServer")
+    static let logger = Logger(label: "com.nxoim.mycelium.server")
 
     static func jsonResponse(_ data: Data) -> Response {
-        return Response(status: .ok, body: .init(byteBuffer: ByteBuffer(data: data)))
+        return Response(status: .ok, body: .init(byteBuffer: ByteBuffer(bytes: data)))
     }
 
     static func jsonResponse(_ json: [String: Any]) -> Response {
@@ -21,7 +21,7 @@ struct ServerHelpers {
     {
         let json = ["error": message]
         let data = (try? JSONSerialization.data(withJSONObject: json)) ?? Data()
-        return Response(status: status, body: .init(byteBuffer: ByteBuffer(data: data)))
+        return Response(status: status, body: .init(byteBuffer: ByteBuffer(bytes: data)))
     }
 
     static func parseAPIRange(_ query: String?) -> Range<Int> {

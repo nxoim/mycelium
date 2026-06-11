@@ -43,7 +43,7 @@ public actor HTTPTransportAdapter {
             return Response(
                 status: status,
                 headers: hbHeaders,
-                body: .init(asyncSequence: sseStream.map { ByteBuffer(data: $0) })
+                body: .init(asyncSequence: sseStream.map { ByteBuffer(bytes: $0) })
             )
         }
 
@@ -51,7 +51,7 @@ public actor HTTPTransportAdapter {
             return Response(
                 status: status,
                 headers: hbHeaders,
-                body: .init(byteBuffer: ByteBuffer(data: data))
+                body: .init(byteBuffer: ByteBuffer(bytes: data))
             )
         }
 
@@ -92,7 +92,7 @@ public actor HTTPTransportAdapter {
         return Response(
             status: .ok,
             headers: HTTPTransportAdapter.jsonHeaders,
-            body: .init(byteBuffer: ByteBuffer(data: data))
+            body: .init(byteBuffer: ByteBuffer(bytes: data))
         )
     }
 

@@ -41,6 +41,10 @@ struct MCPServer: AsyncParsableCommand {
         let transport = StatelessHTTPServerTransport()
 
         let router = Router()
+        router.get("/health") { _, _ in
+            Response(status: .ok)
+        }
+
         router.post("/mcp") { request, _ in
             try await handleMCPRequest(
                 graphBox: graphBox, transport: transport, request: request)

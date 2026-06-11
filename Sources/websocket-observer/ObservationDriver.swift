@@ -1,9 +1,9 @@
 import Foundation
 import GRDB
+import Logging
 import core
-import os
 
-private let logger = Logger(subsystem: "com.mycelium", category: "ObservationDriver")
+private let logger = Logger(label: "com.nxoim.mycelium.observation")
 
 actor ObservationDriver {
     private let dbQueue: DatabaseQueue
@@ -24,7 +24,7 @@ actor ObservationDriver {
         cancellable = observation.start(
             in: dbQueue,
             onError: { (error: Error) in
-                logger.error("Observation error: \(error, privacy: .public)")
+                logger.error("Observation error: \(error)")
             },
             onChange: { (_: Int) in
                 // DB changed — specific events are emitted via MemoryGraphBox callback hooks
