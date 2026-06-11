@@ -16,7 +16,7 @@ enum CLIArg {
     static let sort = "--sort"
     static let observe = "--observe"
     static let ramOnly = "--ram-only"
-    static let port = "--port"
+    static let httpHost = "--http-host"
 
     enum Depth: String {
         case all = "-1"
@@ -361,7 +361,7 @@ final class TestServer: @unchecked Sendable {
         process = Process()
         process!.executableURL = URL(fileURLWithPath: observerPath)
 
-        var args: [String] = [CLIArg.port, "\(port)", CLIArg.observe]
+        var args: [String] = [CLIArg.httpHost, "0.0.0.0:\(port)", CLIArg.observe]
         if ramOnly {
             args.append(CLIArg.ramOnly)
         }

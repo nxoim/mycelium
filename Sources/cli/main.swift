@@ -63,11 +63,12 @@ struct MemorizeCommand: ParsableCommand {
         let trimmedLabel = label.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmedLabel.isEmpty {
             if label.isEmpty {
-                print("Error: Label must not be empty. An empty label is not allowed.")
+                let msg = "Error: Label must not be empty. An empty label is not allowed.\n"
+                FileHandle.standardError.write(Data(msg.utf8))
             } else {
-                print(
-                    "Error: Label contains only whitespace. Whitespace-only labels are not allowed."
-                )
+                let msg =
+                    "Error: Label contains only whitespace. Whitespace-only labels are not allowed.\n"
+                FileHandle.standardError.write(Data(msg.utf8))
             }
             Int32.exit(1)
         }

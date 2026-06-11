@@ -23,11 +23,11 @@ struct Observer: AsyncParsableCommand {
     @Flag(name: .long, help: "Enable observation server (HTTP + WebSocket)")
     var observe = false
 
-    @Option(name: .long, help: "Port to bind on (default: 8080)")
-    var port: Int = 8080
-
-    @Option(name: .long, help: "Host to bind on (default: 127.0.0.1)")
-    var host: String = "127.0.0.1"
+    @Option(
+        name: .customLong("http-host"),
+        help: "Host and port to bind for HTTP (format: host:port, default: 127.0.0.1:8080)"
+    )
+    var httpHost: String = "127.0.0.1:8080"
 
     @Flag(help: "Use in-memory storage instead of persistent SQLite database")
     var ramOnly = false
@@ -155,6 +155,8 @@ struct Observer: AsyncParsableCommand {
                     inbound, outbound: outbound, wsManager: wsManager, graph: graph)
             }
 
+            let host = httpHost.split(separator: ":").first.map(String.init) ?? "127.0.0.1"
+            let port = httpHost.split(separator: ":").last.flatMap { Int($0) } ?? 8080
             let app = Application(
                 router: router,
                 server: .http1WebSocketUpgrade(webSocketRouter: router, configuration: .init()),

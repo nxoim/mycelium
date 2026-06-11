@@ -36,7 +36,7 @@ struct SearchAndQueryTests {
             "search", "nonexistent_xyz_12345", CLIArg.db, db.path,
         ])
         #expect(noResult.exitCode == 0)
-        #expect(noResult.stdout.contains(OutputPattern.memoriesOfFound + " 1 found"))
+        #expect(noResult.stdout.contains(OutputPattern.memoriesOfFound + " 0 found"))
     }
 
     @Test("Search relevance ranking")
@@ -62,7 +62,7 @@ struct SearchAndQueryTests {
         #expect(searchResult.exitCode == 0)
         #expect(
             searchResult.stdout.contains(
-                OutputPattern.memoriesOfFound + " 2 found, starting from 0"))
+                OutputPattern.memoriesOfFound + " 3 found, starting from 0"))
         #expect(searchResult.stdout.contains("SwiftProgramming"))
         #expect(searchResult.stdout.contains("AboutSwift"))
         #expect(searchResult.stdout.contains("General"))

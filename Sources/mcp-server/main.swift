@@ -21,7 +21,7 @@ struct MCPServer: AsyncParsableCommand {
     var db: String?
 
     @Option(
-        name: .long,
+        name: .customLong("http-host"),
         help: "Host and port to bind for HTTP (format: host:port, default: 127.0.0.1:3000)"
     )
     var httpHost: String?
