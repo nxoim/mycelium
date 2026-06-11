@@ -110,11 +110,10 @@ public enum MemoryMarkdown {
         }
         let prefix = String(repeating: "-", count: indent + 1)
         return associationIds.map { id in
-            if let label = labelMap[id] {
-                "\(prefix) **\(label)** (id: \(id.uuidString))\n"
-            } else {
-                "\(prefix) **\(id.uuidString)** (id: \(id.uuidString))\n"
-            }
+            let label =
+                labelMap[id]
+                ?? "<missing label for \(id.uuidString)>"
+            return "\(prefix) **\(label)** (id: \(id.uuidString))\n"
         }.joined()
     }
 }

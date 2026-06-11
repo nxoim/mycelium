@@ -149,11 +149,12 @@ private func handleSearch(_ graph: MemoryGraphBox, _ parameters: CallTool.Parame
         QueryParser.parseSortOrderStrict(parameters.arguments?["sort"]?.stringValue)
         ?? .chronological
 
-    return formatSearchResult(
+    return await formatSearchResult(
         await graph.search(keywords: keywords, in: range, depth: depth, sortOrder: sort)
             .firstResult(),
-        offset: range.lowerBound
-    )
+        offset: range.lowerBound,
+        graph: graph,
+        sortOrder: sort)
 }
 
 private func handleAllMemories(_ graph: MemoryGraphBox, _ parameters: CallTool.Parameters) async
@@ -165,10 +166,11 @@ private func handleAllMemories(_ graph: MemoryGraphBox, _ parameters: CallTool.P
         QueryParser.parseSortOrderStrict(parameters.arguments?["sort"]?.stringValue)
         ?? .chronological
 
-    return formatSearchResult(
+    return await formatSearchResult(
         await graph.allMemories(in: range, depth: depth, sortOrder: sort).firstResult(),
-        offset: range.lowerBound
-    )
+        offset: range.lowerBound,
+        graph: graph,
+        sortOrder: sort)
 }
 
 private func handleOrphans(_ graph: MemoryGraphBox, _ parameters: CallTool.Parameters) async
@@ -180,10 +182,11 @@ private func handleOrphans(_ graph: MemoryGraphBox, _ parameters: CallTool.Param
         QueryParser.parseSortOrderStrict(parameters.arguments?["sort"]?.stringValue)
         ?? .chronological
 
-    return formatSearchResult(
+    return await formatSearchResult(
         await graph.adrift(in: range, depth: depth, sortOrder: sort).firstResult(),
-        offset: range.lowerBound
-    )
+        offset: range.lowerBound,
+        graph: graph,
+        sortOrder: sort)
 }
 
 private func handleAssociate(_ graph: MemoryGraphBox, _ parameters: CallTool.Parameters) async
@@ -231,13 +234,36 @@ private func handleForget(_ graph: MemoryGraphBox, _ parameters: CallTool.Parame
 
 private func formatSearchResult(
     _ result: Result<SearchResult<Memory>, MemoryError>,
-    offset: Int
-) -> CallTool.Result {
+    offset: Int,
+    graph: MemoryGraphBox,
+    sortOrder: core.SortOrder
+) async -> CallTool.Result {
     switch result {
     case .success(let searchResult):
         let memories = searchResult.items
         let totalFound = searchResult.totalCount
-        let labelMap = memories.reduce(into: [:]) { $0[$1.id] = $1.label }
+        let pageLabelMap =
+            memories
+            .filter { !$0.label.isEmpty }
+            .reduce(into: [:]) { $0[$1.id] = $1.label }
+        let missingIds =
+            memories
+            .flatMap(\.associations)
+            .filter { !pageLabelMap.keys.contains($0) }
+        var labelMap = pageLabelMap
+        if !missingIds.isEmpty {
+            switch await graph.buildSummaryNode(
+                ids: missingIds, depth: 0, sortOrder: sortOrder
+            ).firstResult()
+            {
+            case .success(let nodes):
+                for node in nodes where node != nil {
+                    labelMap[node!.id] = node!.label
+                }
+            case .failure:
+                break
+            }
+        }
         return .text(
             MemoryMarkdown.formatSearchResults(
                 memories, totalFound: totalFound,

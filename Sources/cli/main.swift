@@ -218,7 +218,28 @@ struct SearchCommand: AsyncParsableCommand {
         {
         case .success(let searchResult):
             let memories = searchResult.items
-            let labelMap = memories.reduce(into: [:]) { $0[$1.id] = $1.label }
+            let pageLabelMap =
+                memories
+                .filter { !$0.label.isEmpty }
+                .reduce(into: [:]) { $0[$1.id] = $1.label }
+            let missingIds =
+                memories
+                .flatMap(\.associations)
+                .filter { !pageLabelMap.keys.contains($0) }
+            var labelMap = pageLabelMap
+            if !missingIds.isEmpty {
+                switch await graph.buildSummaryNode(
+                    ids: missingIds, depth: 0, sortOrder: sortOrder
+                ).firstResult()
+                {
+                case .success(let nodes):
+                    for node in nodes where node != nil {
+                        labelMap[node!.id] = node!.label
+                    }
+                case .failure:
+                    break
+                }
+            }
             print(
                 MemoryMarkdown.formatSearchResults(
                     memories, totalFound: searchResult.totalCount,
@@ -271,7 +292,28 @@ struct AllMemoriesCommand: AsyncParsableCommand {
         switch await graph.allMemories(in: range, depth: 0, sortOrder: sortOrder).firstResult() {
         case .success(let searchResult):
             let memories = searchResult.items
-            let labelMap = memories.reduce(into: [:]) { $0[$1.id] = $1.label }
+            let pageLabelMap =
+                memories
+                .filter { !$0.label.isEmpty }
+                .reduce(into: [:]) { $0[$1.id] = $1.label }
+            let missingIds =
+                memories
+                .flatMap(\.associations)
+                .filter { !pageLabelMap.keys.contains($0) }
+            var labelMap = pageLabelMap
+            if !missingIds.isEmpty {
+                switch await graph.buildSummaryNode(
+                    ids: missingIds, depth: 0, sortOrder: sortOrder
+                ).firstResult()
+                {
+                case .success(let nodes):
+                    for node in nodes where node != nil {
+                        labelMap[node!.id] = node!.label
+                    }
+                case .failure:
+                    break
+                }
+            }
             print(
                 MemoryMarkdown.formatSearchResults(
                     memories, totalFound: searchResult.totalCount,
@@ -324,7 +366,28 @@ struct AdriftCommand: AsyncParsableCommand {
         switch await graph.adrift(in: range, depth: 0, sortOrder: sortOrder).firstResult() {
         case .success(let searchResult):
             let memories = searchResult.items
-            let labelMap = memories.reduce(into: [:]) { $0[$1.id] = $1.label }
+            let pageLabelMap =
+                memories
+                .filter { !$0.label.isEmpty }
+                .reduce(into: [:]) { $0[$1.id] = $1.label }
+            let missingIds =
+                memories
+                .flatMap(\.associations)
+                .filter { !pageLabelMap.keys.contains($0) }
+            var labelMap = pageLabelMap
+            if !missingIds.isEmpty {
+                switch await graph.buildSummaryNode(
+                    ids: missingIds, depth: 0, sortOrder: sortOrder
+                ).firstResult()
+                {
+                case .success(let nodes):
+                    for node in nodes where node != nil {
+                        labelMap[node!.id] = node!.label
+                    }
+                case .failure:
+                    break
+                }
+            }
             print(
                 MemoryMarkdown.formatSearchResults(
                     memories, totalFound: searchResult.totalCount,
