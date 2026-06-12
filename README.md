@@ -7,6 +7,13 @@ The core idea is to give LLMs a persistent, association-based memory system they
 For example, while debugging a problem, the model might search its memory for something adjacent to the topic at hand, then find a relevant memory, then read it fully, and then shift the direction of the conversation.
 
 ## The setup
+
+### Docker, Podman, etc.
+
+See [docker/README.md](docker/README.md) for build and run instructions.
+
+### Or native build
+
 1. Install the [Swift toolchain](https://www.swift.org/install/), if you don't already have it. Make sure it's 6.3+.
 
 2. Build the binaries:
