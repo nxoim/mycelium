@@ -39,8 +39,11 @@ RUN ln -sf /usr/lib/aarch64-linux-gnu/libsqlite3.so.0 /usr/lib/aarch64-linux-gnu
     mkdir -p /etc/ld.so.conf.d && echo '/usr/local/lib' > /etc/ld.so.conf.d/sqlite.conf && \
     ldconfig
 
+COPY docker/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
 EXPOSE 3000 8080
 
 VOLUME ["/data"]
 
-CMD ["websocket-observer", "--observe", "--http-host", "0.0.0.0:8080", "--db", "/data"]
+ENTRYPOINT ["/entrypoint.sh"]

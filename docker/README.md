@@ -7,26 +7,17 @@ podman build -f docker/Dockerfile -t localhost/mycelium:latest .
 
 ## Run
 
-### Default (websocket-observer)
-
 ```bash
 # podman or docker
-podman volume create mycelium-data 2>/dev/null || true
-podman run -d --name mycelium -p 8080:8080 -v mycelium-data:/data localhost/mycelium:latest ./websocket-observer --observe --http-host "0.0.0.0:8080" --db /data
-```
-
-### MCP server
-
-```bash
-podman run -d --name mycelium-mcp -p 3000:3000 -v mycelium-data:/data localhost/mycelium:latest /app/mcp-server --db /data --http-host "0.0.0.0:3000"
+podman run -d --name mycelium -p 3000:3000 -p 8080:8080 -v mycelium-data:/data localhost/mycelium:latest
 ```
 
 ### Stop and remove
 
 ```bash
 # podman or docker
-podman stop mycelium mycelium-mcp
-podman rm mycelium mycelium-mcp
+podman stop mycelium
+podman rm mycelium
 ```
 
 ## MCP client
